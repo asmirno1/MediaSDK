@@ -1,5 +1,5 @@
 /******************************************************************************\
-Copyright (c) 2005-2018, Intel Corporation
+Copyright (c) 2005-2019, Intel Corporation
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
@@ -17,43 +17,65 @@ The original version of this sample may be obtained from https://software.intel.
 or https://software.intel.com/en-us/media-client-solutions-support.
 \**********************************************************************************/
 
-#include <new> // std::bad_alloc
+#ifndef __CAM_SYSMEM_ALLOCATOR_H__
+#define __CAM_SYSMEM_ALLOCATOR_H__
 
-#include "vm/thread_defs.h"
+#include <stdlib.h>
+#include "base_allocator.h"
 
-AutomaticMutex::AutomaticMutex(MSDKMutex& mutex):
-    m_rMutex(mutex),
-    m_bLocked(false)
+struct sBuffer
 {
-    if (MFX_ERR_NONE != Lock()) throw std::bad_alloc();
+    mfxU32      id;
+    mfxU32      nbytes;
+    mfxU16      type;
 };
-AutomaticMutex::~AutomaticMutex(void)
-{
-    Unlock();
-}
 
-mfxStatus AutomaticMutex::Lock(void)
+struct sFrame
 {
-    mfxStatus sts = MFX_ERR_NONE;
-    if (!m_bLocked)
-    {
-        if (!m_rMutex.Try())
-        {
-            // add time measurement here to estimate how long you sleep on mutex...
-            sts = m_rMutex.Lock();
-        }
-        m_bLocked = true;
-    }
-    return sts;
-}
+    mfxU32          id;
+    mfxFrameInfo    info;
+};
 
-mfxStatus AutomaticMutex::Unlock(void)
+struct CamSysMemAllocatorParams : mfxAllocatorParams
 {
-    mfxStatus sts = MFX_ERR_NONE;
-    if (m_bLocked)
-    {
-        sts = m_rMutex.Unlock();
-        m_bLocked = false;
-    }
-    return sts;
-}
+    CamSysMemAllocatorParams()
+        : mfxAllocatorParams(),
+          pBufferAllocator(0), alignment(0) { }
+    MFXBufferAllocator *pBufferAllocator;
+    mfxI32              alignment;
+};
+
+class CamSysMemFrameAllocator: public BaseFrameAllocator
+{
+public:
+    CamSysMemFrameAllocator();
+    virtual ~CamSysMemFrameAllocator();
+
+    virtual mfxStatus Init(mfxAllocatorParams *pParams);
+    virtual mfxStatus Close();
+    virtual mfxStatus LockFrame(mfxMemId mid, mfxFrameData *ptr);
+    virtual mfxStatus UnlockFrame(mfxMemId mid, mfxFrameData *ptr);
+    virtual mfxStatus GetFrameHDL(mfxMemId mid, mfxHDL *handle);
+
+protected:
+    virtual mfxStatus CheckRequestType(mfxFrameAllocRequest *request);
+    virtual mfxStatus ReleaseResponse(mfxFrameAllocResponse *response);
+    virtual mfxStatus AllocImpl(mfxFrameAllocRequest *request, mfxFrameAllocResponse *response);
+
+    MFXBufferAllocator *m_pBufferAllocator;
+    bool m_bOwnBufferAllocator;
+    mfxU32 m_alignment;
+};
+
+class CamSysMemBufferAllocator : public MFXBufferAllocator
+{
+public:
+    CamSysMemBufferAllocator();
+    virtual ~CamSysMemBufferAllocator();
+    virtual mfxStatus AllocBuffer(mfxU32 nbytes, mfxU16 type, mfxMemId *mid);
+    virtual mfxStatus LockBuffer(mfxMemId mid, mfxU8 **ptr);
+    virtual mfxStatus UnlockBuffer(mfxMemId mid);
+    virtual mfxStatus FreeBuffer(mfxMemId mid);
+};
+
+#endif // __CAM_SYSMEM_ALLOCATOR_H__

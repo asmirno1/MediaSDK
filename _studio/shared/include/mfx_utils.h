@@ -24,6 +24,7 @@
 #include "mfx_config.h"
 
 #include "mfxstructures.h"
+#include "mfxplugin.h"
 
 #include "umc_structures.h"
 #include "mfx_trace.h"
@@ -121,12 +122,13 @@ bool LumaIsNull(const mfxFrameSurface1 * surf)
 #define SAFE_RELEASE(PTR)   { if (PTR) { PTR->Release(); PTR = NULL; } }
 #endif
 
-/// Align integral T @value to power of two @alignment
-template<class T> inline T AlignValue(T value, mfxU32 alignment)
-{
-    assert((alignment & (alignment - 1)) == 0); // should be 2^n
-    return static_cast<T>((value + alignment - 1) & ~(alignment - 1));
-}
+#ifdef MFX_ENABLE_CPLIB
+    #define IS_PROTECTION_CENC(val) (MFX_PROTECTION_CENC_WV_CLASSIC == (val) || MFX_PROTECTION_CENC_WV_GOOGLE_DASH == (val))
+#else
+    #define IS_PROTECTION_CENC(val) (false)
+#endif
+
+#define IS_PROTECTION_ANY(val) IS_PROTECTION_CENC(val)
 
 namespace mfx
 {
@@ -144,6 +146,14 @@ template<class T, class Compare>
 constexpr const T& clamp( const T& v, const T& lo, const T& hi, Compare comp )
 {
     return comp(v, lo) ? lo : comp(hi, v) ? hi : v;
+}
+
+// Aligns value to next power of two
+template<class T> inline
+T align2_value(T value, size_t alignment = 16)
+{
+    assert((alignment & (alignment - 1)) == 0);
+    return static_cast<T> ((value + (alignment - 1)) & ~(alignment - 1));
 }
 }
 
@@ -164,5 +174,15 @@ inline mfxStatus CheckAndDestroyVAbuffer(VADisplay display, VABufferID & buffer_
     return MFX_ERR_NONE;
 }
 #endif
+
+static inline bool operator==(mfxPluginUID const& l, mfxPluginUID const& r)
+{
+    return std::equal(l.Data, l.Data + 16, r.Data);
+}
+
+static inline bool operator!=(mfxPluginUID const& l, mfxPluginUID const& r)
+{
+    return !(l == r);
+}
 
 #endif // __MFXUTILS_H__

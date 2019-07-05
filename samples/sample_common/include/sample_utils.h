@@ -100,9 +100,15 @@ enum
     MFX_FOURCC_YUV444       = MFX_MAKEFOURCC('4','4','4','P'),
 #if (MFX_VERSION <= 1027)
     MFX_FOURCC_RGBP         = MFX_MAKEFOURCC('R','G','B','P'),
-#else
 #endif
     MFX_FOURCC_I420         = MFX_MAKEFOURCC('I','4','2','0')
+};
+
+enum ExtBRCType {
+    EXTBRC_DEFAULT,
+    EXTBRC_OFF,
+    EXTBRC_ON,
+    EXTBRC_IMPLICIT
 };
 
 bool IsDecodeCodecSupported(mfxU32 codecFormat);
@@ -488,10 +494,56 @@ mfxStatus ConvertFrameRate(mfxF64 dFrameRate, mfxU32* pnFrameRateExtN, mfxU32* p
 mfxF64 CalculateFrameRate(mfxU32 nFrameRateExtN, mfxU32 nFrameRateExtD);
 mfxU16 GetFreeSurfaceIndex(mfxFrameSurface1* pSurfacesPool, mfxU16 nPoolSize);
 mfxU16 GetFreeSurface(mfxFrameSurface1* pSurfacesPool, mfxU16 nPoolSize);
-mfxStatus InitMfxBitstream(mfxBitstream* pBitstream, mfxU32 nSize);
+void FreeSurfacePool(mfxFrameSurface1* pSurfacesPool, mfxU16 nPoolSize);
 
-//performs copy to end if possible, also move data to buffer begin if necessary
-//shifts offset pointer in source bitstream in success case
+class mfxBitstreamWrapper : public mfxBitstream
+{
+public:
+    mfxBitstreamWrapper()
+        : mfxBitstream()
+    {}
+
+    mfxBitstreamWrapper(mfxU32 n_bytes)
+        : mfxBitstream()
+    {
+        Extend(n_bytes);
+    }
+
+    mfxBitstreamWrapper(const mfxBitstreamWrapper & bs_wrapper)
+        : mfxBitstream(bs_wrapper)
+        , m_data(bs_wrapper.m_data)
+    {
+        Data = m_data.data();
+    }
+
+    mfxBitstreamWrapper& operator=(mfxBitstreamWrapper const& bs_wrapper)
+    {
+        mfxBitstreamWrapper tmp(bs_wrapper);
+
+        *this = std::move(tmp);
+
+        return *this;
+    }
+
+    mfxBitstreamWrapper(mfxBitstreamWrapper && bs_wrapper)             = default;
+    mfxBitstreamWrapper & operator= (mfxBitstreamWrapper&& bs_wrapper) = default;
+    ~mfxBitstreamWrapper()                                             = default;
+
+    void Extend(mfxU32 n_bytes)
+    {
+        if (MaxLength >= n_bytes)
+            return;
+
+        m_data.resize(n_bytes);
+
+        Data      = m_data.data();
+        MaxLength = n_bytes;
+    }
+private:
+    std::vector<mfxU8> m_data;
+};
+
+mfxStatus InitMfxBitstream(mfxBitstream* pBitstream, mfxU32 nSize);
 mfxStatus MoveMfxBitstream(mfxBitstream *pTarget, mfxBitstream *pSrc, mfxU32 nBytesToCopy);
 mfxStatus ExtendMfxBitstream(mfxBitstream* pBitstream, mfxU32 nSize);
 void WipeMfxBitstream(mfxBitstream* pBitstream);
@@ -698,13 +750,22 @@ template<typename T>
 template<size_t S>
     mfxStatus msdk_opt_read(const msdk_char* string, msdk_char (&value)[S])
     {
+        if (!S)
+        {
+            return MFX_ERR_UNKNOWN;
+        }
         value[0]=0;
+    #if defined(_WIN32) || defined(_WIN64)
+        value[S - 1] = 0;
+        return (0 == _tcsncpy_s(value, string,S-1))? MFX_ERR_NONE: MFX_ERR_UNKNOWN;
+    #else
         if (strlen(string) < S) {
             strncpy(value, string, S-1);
             value[S - 1] = 0;
             return MFX_ERR_NONE;
         }
         return MFX_ERR_UNKNOWN;
+    #endif
     }
 
 template<typename T>
@@ -717,7 +778,7 @@ mfxStatus StrFormatToCodecFormatFourCC(msdk_char* strInput, mfxU32 &codecFormat)
 msdk_string StatusToString(mfxStatus sts);
 mfxI32 getMonitorType(msdk_char* str);
 
-void WaitForDeviceToBecomeFree(MFXVideoSession& session, mfxSyncPoint& syncPoint,mfxStatus& currentStatus);
+void WaitForDeviceToBecomeFree(MFXVideoSession& session, mfxSyncPoint& syncPoint, mfxStatus& currentStatus);
 
 mfxU16 FourCCToChroma(mfxU32 fourCC);
 
@@ -757,7 +818,7 @@ private:
 // if nothing with MFX_EXTBUFF_MCTF_CONTROL is attached yet, a new buffer is created and stored in internal
 // list, then cleaned and a pointer is returned to a caller;
 // finally, if DeallocateAll is true, internal pool is traverserd and for each entry delete is called;
-// Alternative is to implement own allocator which for internal list which will clean everything; 
+// Alternative is to implement own allocator which for internal list which will clean everything;
 // not implemented yet for simpicity reasons.
 template<class ParamT, mfxU32 ParamName>
 //mfxExtMctfControl* GetMctfParamBuffer(mfxFrameSurface1* pmfxSurface, bool DeallocateAll = false)

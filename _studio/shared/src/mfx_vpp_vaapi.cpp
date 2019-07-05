@@ -477,6 +477,7 @@ mfxStatus VAAPIVideoProcessing::QueryCapabilities(mfxVppCaps& caps)
         case MFX_FOURCC_RGBP:
 #endif
         case MFX_FOURCC_P010:
+        case MFX_FOURCC_A2RGB10:
             caps.mFormatSupport[fourcc] |= MFX_FORMAT_SUPPORT_OUTPUT;
             break;
         default:
@@ -1814,7 +1815,7 @@ mfxStatus VAAPIVideoProcessing::Execute_Composition(mfxExecuteParams *pParams)
             {
                 uint32_t Y = (uint32_t)((pParams->iBackgroundColor >> 26) & 0xffC0);
                 uint32_t U = (uint32_t)((pParams->iBackgroundColor >> 10) & 0xffC0);
-                uint32_t V = (uint32_t)((pParams->iBackgroundColor <<6) & 0xffC0);
+                uint32_t V = (uint32_t)((pParams->iBackgroundColor <<  6) & 0xffC0);
 
                 uint16_t valueY = (uint16_t)Y;
                 uint32_t valueUV = (int32_t)((V << 16) + U); // Keep in mind that short is stored in memory using little-endian notation

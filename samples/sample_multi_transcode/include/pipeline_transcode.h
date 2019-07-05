@@ -52,6 +52,7 @@ or https://software.intel.com/en-us/media-client-solutions-support.
 #include "plugin_loader.h"
 #include "sample_defs.h"
 #include "plugin_utils.h"
+#include "preset_manager.h"
 
 #if (MFX_VERSION >= 1024)
 #include "brc_routines.h"
@@ -184,6 +185,7 @@ namespace TranscodingSample
         bool   bIsPerf;   // special performance mode. Use pre-allocated bitstreams, output
         mfxU16 nThreadsNum; // number of internal session threads number
         bool bRobustFlag;   // Robust transcoding mode. Allows auto-recovery after hardware errors
+        bool bSoftRobustFlag;
 
         mfxU32 EncodeId; // type of output coded video
         mfxU32 DecodeId; // type of input coded video
@@ -197,6 +199,7 @@ namespace TranscodingSample
         mfxU16 nTargetUsage;
         mfxF64 dDecoderFrameRateOverride;
         mfxF64 dEncoderFrameRateOverride;
+        mfxU16 EncoderPicstructOverride;
         mfxF64 dVPPOutFramerate;
         mfxU16 nBitRate;
         mfxU16 nBitRateMultiplier;
@@ -236,6 +239,7 @@ namespace TranscodingSample
         mfxU16 nBRefType;
         mfxU16 RepartitionCheckMode;
         mfxU16 GPB;
+        mfxU16 nTransformSkip;
 
         mfxU16 CodecLevel;
         mfxU16 CodecProfile;
@@ -275,6 +279,15 @@ namespace TranscodingSample
         mfxU16 nQPB;
         bool bDisableQPOffset;
 
+        mfxU16 nAvcTemp;
+        mfxU16 nBaseLayerPID;
+        mfxU16 nAvcTemporalLayers[8];
+        mfxU16 nSPSId;
+        mfxU16 nPPSId;
+        mfxU16 nPicTimingSEI;
+        mfxU16 nNalHrdConformance;
+        mfxU16 nVuiNalHrdParameters;
+
         bool bOpenCL;
         mfxU16 reserved[4];
 
@@ -305,6 +318,16 @@ namespace TranscodingSample
 
         ExtBRCType nExtBRC;
 
+        mfxU16 nAdaptiveMaxFrameSize;
+        mfxU16 LowDelayBRC;
+
+        mfxU16 IntRefType;
+        mfxU16 IntRefCycleSize;
+        mfxU16 IntRefQPDelta;
+        mfxU16 IntRefCycleDist;
+
+        mfxU32 nMaxFrameSize;
+
 #if (MFX_VERSION >= 1025)
         mfxU16 numMFEFrames;
         mfxU16 MFMode;
@@ -322,6 +345,9 @@ namespace TranscodingSample
 #endif // defined(MFX_LIBVA_SUPPORT)
 
         CHWDevice             *m_hwdev;
+
+        EPresetModes PresetMode;
+        bool shouldPrintPresets;
     };
 
     struct sInputParams: public __sInputParams
@@ -648,6 +674,8 @@ namespace TranscodingSample
 
         mfxExtMVCSeqDesc GetDecMVCSeqDesc() const {return m_MVCSeqDesc;}
 
+        static void ModifyParamsUsingPresets(sInputParams& params, mfxF64 fps, mfxU32 width, mfxU32 height);
+
         // alloc frames for all component
         mfxStatus AllocFrames(mfxFrameAllocRequest  *pRequest, bool isDecAlloc);
         mfxStatus AllocFrames();
@@ -674,6 +702,8 @@ namespace TranscodingSample
         virtual mfxStatus InitEncMfxParams(sInputParams *pInParams);
         mfxStatus InitPluginMfxParams(sInputParams *pInParams);
         mfxStatus InitPreEncMfxParams(sInputParams *pInParams);
+
+        void FillFrameInfoForEncoding(mfxFrameInfo& info, sInputParams *pInParams);
 
         mfxStatus AllocAndInitVppDoNotUse(sInputParams *pInParams);
         mfxStatus AllocMVCSeqDesc();
@@ -789,6 +819,10 @@ namespace TranscodingSample
         mfxExtDecVideoProcessing m_decPostProcessing;
 #endif //MFX_VERSION >= 1022
 
+        mfxExtAvcTemporalLayers  m_AvcTemporalLayers;
+        mfxExtCodingOptionSPSPPS m_CodingOptionSPSPPS;
+        mfxExtCodingOption       m_CodingOption;
+
         mfxExtLAControl          m_ExtLAControl;
         // for setting MaxSliceSize
         mfxExtCodingOption2      m_CodingOption2;
@@ -797,8 +831,11 @@ namespace TranscodingSample
 
         // HEVC
         mfxExtHEVCParam          m_ExtHEVCParam;
+        mfxExtHEVCTiles          m_ExtHEVCTiles;
+#if (MFX_VERSION >= 1026)
         // VP9
         mfxExtVP9Param           m_ExtVP9Param;
+#endif
 
 #if (MFX_VERSION >= 1024)
         mfxExtBRC                m_ExtBRC;
@@ -850,6 +887,7 @@ namespace TranscodingSample
         std::mutex      m_mReset;
         std::mutex      m_mStopSession;
         bool            m_bRobustFlag;
+        bool            m_bSoftGpuHangRecovery;
 
         bool isHEVCSW;
 
