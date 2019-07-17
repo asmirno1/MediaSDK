@@ -175,14 +175,20 @@ inline mfxStatus CheckAndDestroyVAbuffer(VADisplay display, VABufferID & buffer_
 }
 #endif
 
-static inline bool operator==(mfxPluginUID const& l, mfxPluginUID const& r)
-{
-    return std::equal(l.Data, l.Data + 16, r.Data);
+#define MFX_EQ_FIELD(Field) l.Field == r.Field
+#define MFX_EQ_ARRAY(Array, Num) std::equal(l.Array, l.Array + Num, r.Array)
+
+#define MFX_DECL_OPERATOR_NOT_EQ(Name)                      \
+static inline bool operator!=(Name const& l, Name const& r) \
+{                                                           \
+    return !(l == r);                                       \
 }
 
-static inline bool operator!=(mfxPluginUID const& l, mfxPluginUID const& r)
+static inline bool operator==(mfxPluginUID const& l, mfxPluginUID const& r)
 {
-    return !(l == r);
+    return MFX_EQ_ARRAY(Data, 16);
 }
+
+MFX_DECL_OPERATOR_NOT_EQ(mfxPluginUID)
 
 #endif // __MFXUTILS_H__
