@@ -106,7 +106,7 @@ static mfxStatus SetROI(
             roi_Param->roi[i].roi_rectangle.y = task.m_roi[i].Top;
             roi_Param->roi[i].roi_rectangle.width = task.m_roi[i].Right - task.m_roi[i].Left;
             roi_Param->roi[i].roi_rectangle.height = task.m_roi[i].Bottom - task.m_roi[i].Top;
-            roi_Param->roi[i].roi_value = (mfxI8)(task.m_bPriorityToDQPpar ? (-1)*task.m_roi[i].Priority: task.m_roi[i].Priority);
+            roi_Param->roi[i].roi_value = (mfxI8)((task.m_roiMode == MFX_ROI_MODE_PRIORITY ? (-1) : 1) * task.m_roi[i].DeltaQP);
         }
         roi_Param->max_delta_qp = 51;
         roi_Param->min_delta_qp = -51;
@@ -890,6 +890,11 @@ mfxStatus VAAPIEncoder::CreateAuxilliaryDevice(
                           vaParams.profile,
                           vaParams.entrypoint,
                           attrs.data(), attrs.size());
+
+    MFX_CHECK(!(VA_STATUS_ERROR_UNSUPPORTED_ENTRYPOINT == vaSts ||
+                VA_STATUS_ERROR_UNSUPPORTED_PROFILE    == vaSts),
+                MFX_ERR_UNSUPPORTED);
+
     MFX_CHECK_WITH_ASSERT(VA_STATUS_SUCCESS == vaSts, MFX_ERR_DEVICE_FAILED);
 
 #if MFX_VERSION >= 1022
@@ -1317,7 +1322,7 @@ bool FillCUQPDataVA(Task const & task, MfxVideoParam &par, CUQPMap& cuqpMap)
                     mfxU32 y = i*drBlkH;
                     if (x >= roi->ROI[n].Left  &&  x < roi->ROI[n].Right  && y >= roi->ROI[n].Top && y < roi->ROI[n].Bottom)
                     {
-                        diff = (task.m_bPriorityToDQPpar? (-1) : 1) * roi->ROI[n].Priority;
+                        diff = ((task.m_roiMode == MFX_ROI_MODE_PRIORITY ? (-1) : 1)) * roi->ROI[n].Priority;
                         break;
                     }
 

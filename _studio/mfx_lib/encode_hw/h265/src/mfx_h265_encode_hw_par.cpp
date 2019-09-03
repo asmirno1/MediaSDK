@@ -981,10 +981,8 @@ mfxStatus CheckAndFixRoi(MfxVideoParam  const & par, ENCODE_CAPS_HEVC const & ca
     else
     {
 #if MFX_VERSION > 1021
-        if (ROI->ROIMode == MFX_ROI_MODE_QP_DELTA)
+        if (ROI->ROIMode == MFX_ROI_MODE_QP_DELTA || ROI->ROIMode == MFX_ROI_MODE_PRIORITY)
             invalid += (caps.ROIDeltaQPSupport == 0);
-        else if (ROI->ROIMode == MFX_ROI_MODE_PRIORITY)
-            invalid += (caps.ROIBRCPriorityLevelSupport == 0);
         else
             invalid++;
 #endif // MFX_VERSION > 1021
@@ -1858,8 +1856,9 @@ mfxStatus CheckVideoParam(MfxVideoParam& par, MFX_ENCODE_CAPS_HEVC const & caps,
         mfxU32 minTileHeight = MIN_TILE_SIZE_HEIGHT;
 
         // min 2x2 lcu is supported on VDEnc
+        // TODO: replace indirect NumScalablePipesMinus1 by platform
         if (caps.ddi_caps.NumScalablePipesMinus1 > 0 && IsOn(par.mfx.LowPower))
-            minTileHeight *= 2;
+            minTileHeight = 128;
 
         mfxU16 nCol = (mfxU16)CeilDiv(par.m_ext.HEVCParam.PicWidthInLumaSamples, minTileWidth);
         mfxU16 nRow = (mfxU16)CeilDiv(par.m_ext.HEVCParam.PicHeightInLumaSamples, minTileHeight);
@@ -1867,11 +1866,7 @@ mfxStatus CheckVideoParam(MfxVideoParam& par, MFX_ENCODE_CAPS_HEVC const & caps,
         changed += CheckMax(par.m_ext.HEVCTiles.NumTileColumns, nCol);
         changed += CheckMax(par.m_ext.HEVCTiles.NumTileRows, nRow);
 
-        if (caps.ddi_caps.NumScalablePipesMinus1 > 0) {
-            MaxTileColumns = (mfxU16)caps.ddi_caps.NumScalablePipesMinus1 + 1;
-            changed += CheckMax(par.m_ext.HEVCTiles.NumTileColumns, MaxTileColumns);
-        }
-        else if ((par.m_platform == MFX_HW_ICL || par.m_platform == MFX_HW_ICL_LP) && IsOn(par.mfx.LowPower) && par.m_ext.HEVCTiles.NumTileColumns > 1 && par.m_ext.HEVCTiles.NumTileRows > 1) {
+        if ((par.m_platform == MFX_HW_ICL || par.m_platform == MFX_HW_ICL_LP) && IsOn(par.mfx.LowPower) && par.m_ext.HEVCTiles.NumTileColumns > 1 && par.m_ext.HEVCTiles.NumTileRows > 1) {
             // for ICL VDEnc only 1xN or Nx1 configurations are allowed for single pipe
             // we ignore "Rows" condition
             changed += CheckMax(par.m_ext.HEVCTiles.NumTileRows, 1);
