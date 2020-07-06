@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019 Intel Corporation
+// Copyright (c) 2018-2020 Intel Corporation
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -70,6 +70,11 @@ mfxU16 MatchProfile(mfxU32 fourcc)
         case MFX_FOURCC_Y210:
         case MFX_FOURCC_Y410:
 #endif
+#if (MFX_VERSION >= 1031)
+        case MFX_FOURCC_P016:
+        case MFX_FOURCC_Y216:
+        case MFX_FOURCC_Y416:
+#endif
             return MFX_PROFILE_HEVC_REXT;
     }
 
@@ -101,6 +106,9 @@ bool CheckGUID(VideoCORE * core, eMFXHWType type, mfxVideoParam const* param)
         case MFX_PROFILE_HEVC_REXT:
         case MFX_PROFILE_HEVC_MAINSP:
         case MFX_PROFILE_HEVC_MAIN10:
+#if (MFX_VERSION >= 1032)
+        case MFX_PROFILE_HEVC_SCC:
+#endif
             return true;
     }
 
@@ -150,15 +158,28 @@ mfxU16 QueryMaxProfile(eMFXHWType type)
         return MFX_PROFILE_HEVC_MAIN;
     else if (type < MFX_HW_ICL)
         return MFX_PROFILE_HEVC_MAIN10;
-    else
+    else if (type < MFX_HW_TGL_LP)
         return MFX_PROFILE_HEVC_REXT;
+    else
+#if (MFX_VERSION >= 1032)
+        return MFX_PROFILE_HEVC_SCC;
+#else
+        return MFX_PROFILE_HEVC_REXT;
+#endif
 }
 
 inline
 bool CheckChromaFormat(mfxU16 profile, mfxU16 format)
 {
     VM_ASSERT(profile != MFX_PROFILE_UNKNOWN);
-    VM_ASSERT(!(profile > MFX_PROFILE_HEVC_MAINSP));
+#if (MFX_VERSION >= 1032)
+    VM_ASSERT(
+        !(profile >  MFX_PROFILE_HEVC_REXT) ||
+        profile == MFX_PROFILE_HEVC_SCC
+    );
+#else
+    VM_ASSERT(!(profile >  MFX_PROFILE_HEVC_REXT));
+#endif
 
     if (format > MFX_CHROMAFORMAT_YUV444)
         return false;
@@ -175,6 +196,9 @@ bool CheckChromaFormat(mfxU16 profile, mfxU16 format)
 
         { MFX_PROFILE_HEVC_REXT,   {                      -1, MFX_CHROMAFORMAT_YUV420, MFX_CHROMAFORMAT_YUV422, MFX_CHROMAFORMAT_YUV444 } },
 
+#if (MFX_VERSION >= 1032)
+        { MFX_PROFILE_HEVC_SCC,    {                      -1, MFX_CHROMAFORMAT_YUV420,                      -1, MFX_CHROMAFORMAT_YUV444 } },
+#endif
     };
 
     supported_t const
@@ -192,7 +216,14 @@ inline
 bool CheckBitDepth(mfxU16 profile, mfxU16 bit_depth)
 {
     VM_ASSERT(profile != MFX_PROFILE_UNKNOWN);
-    VM_ASSERT(!(profile > MFX_PROFILE_HEVC_MAINSP));
+#if (MFX_VERSION >= 1032)
+    VM_ASSERT(
+        !(profile >  MFX_PROFILE_HEVC_REXT) ||
+        profile == MFX_PROFILE_HEVC_SCC
+    );
+#else
+    VM_ASSERT(!(profile >  MFX_PROFILE_HEVC_REXT));
+#endif
 
     struct minmax_t
     {
@@ -203,7 +234,10 @@ bool CheckBitDepth(mfxU16 profile, mfxU16 bit_depth)
         { MFX_PROFILE_HEVC_MAIN,   8,  8 },
         { MFX_PROFILE_HEVC_MAIN10, 8, 10 },
         { MFX_PROFILE_HEVC_MAINSP, 8,  8 },
-        { MFX_PROFILE_HEVC_REXT,   8, 10 }, //(10b max for Gen11 & SW mode)
+        { MFX_PROFILE_HEVC_REXT,   8, 12 }, //(12b max for Gen12)
+#if (MFX_VERSION >= 1032)
+        { MFX_PROFILE_HEVC_SCC,    8, 10 }, //(10b max for Gen12)
+#endif
     };
 
     minmax_t const
@@ -241,13 +275,18 @@ mfxU32 CalculateFourcc(mfxU16 codecProfile, mfxFrameInfo const* frameInfo)
         return 0;
 
     mfxU16 bit_depth =
-       MFX_MAX(frameInfo->BitDepthLuma, frameInfo->BitDepthChroma);
+       std::max(frameInfo->BitDepthLuma, frameInfo->BitDepthChroma);
 
     //map chroma fmt & bit depth onto fourcc (NOTE: we currently don't support bit depth above 10 bit)
     mfxU32 const map[][4] =
     {
             /* 8 bit */      /* 10 bit */
-#if (MFX_VERSION >= 1027)
+#if (MFX_VERSION >= 1031)
+        {               0,               0,               0, 0 }, //400
+        { MFX_FOURCC_NV12, MFX_FOURCC_P010, MFX_FOURCC_P016, 0 }, //420
+        { MFX_FOURCC_YUY2, MFX_FOURCC_Y210, MFX_FOURCC_Y216, 0 }, //422
+        { MFX_FOURCC_AYUV, MFX_FOURCC_Y410, MFX_FOURCC_Y416, 0 }, //444
+#elif (MFX_VERSION >= 1027)
         {               0,               0,               0, 0 }, //400
         { MFX_FOURCC_NV12, MFX_FOURCC_P010,               0, 0 }, //420
         { MFX_FOURCC_YUY2, MFX_FOURCC_Y210,               0, 0 }, //422
@@ -274,7 +313,8 @@ mfxU32 CalculateFourcc(mfxU16 codecProfile, mfxFrameInfo const* frameInfo)
 
     VM_ASSERT(
         (bit_depth ==  8 ||
-         bit_depth == 10) &&
+         bit_depth == 10 ||
+         bit_depth == 12) &&
         "Unsupported bit depth, should be validated before"
     );
 
@@ -323,8 +363,8 @@ UMC::Status FillVideoParam(const H265SeqParamSet * seq, mfxVideoParam *par, bool
     {
         par->mfx.FrameInfo.CropX = (mfxU16)(seq->conf_win_left_offset + seq->def_disp_win_left_offset);
         par->mfx.FrameInfo.CropY = (mfxU16)(seq->conf_win_top_offset + seq->def_disp_win_top_offset);
-        par->mfx.FrameInfo.CropH = (mfxU16)(par->mfx.FrameInfo.Height - (seq->conf_win_top_offset + seq->conf_win_bottom_offset + seq->def_disp_win_top_offset + seq->def_disp_win_bottom_offset));
-        par->mfx.FrameInfo.CropW = (mfxU16)(par->mfx.FrameInfo.Width - (seq->conf_win_left_offset + seq->conf_win_right_offset + seq->def_disp_win_left_offset + seq->def_disp_win_right_offset));
+        par->mfx.FrameInfo.CropH = (mfxU16)(par->mfx.FrameInfo.Height - (seq->conf_win_top_offset + seq->conf_win_bottom_offset));
+        par->mfx.FrameInfo.CropW = (mfxU16)(par->mfx.FrameInfo.Width - (seq->conf_win_left_offset + seq->conf_win_right_offset));
 
         par->mfx.FrameInfo.CropH -= (mfxU16)(par->mfx.FrameInfo.Height - seq->pic_height_in_luma_samples);
         par->mfx.FrameInfo.CropW -= (mfxU16)(par->mfx.FrameInfo.Width - seq->pic_width_in_luma_samples);
@@ -652,6 +692,8 @@ mfxStatus Query_H265(VideoCORE *core, mfxVideoParam *in, mfxVideoParam *out, eMF
 
     if (in)
     {
+        out->mfx.MaxDecFrameBuffering = in->mfx.MaxDecFrameBuffering;
+
         if (in->mfx.CodecId == MFX_CODEC_HEVC)
             out->mfx.CodecId = in->mfx.CodecId;
 
@@ -752,6 +794,11 @@ mfxStatus Query_H265(VideoCORE *core, mfxVideoParam *in, mfxVideoParam *out, eMF
                 || in->mfx.FrameInfo.FourCC == MFX_FOURCC_Y210
                 || in->mfx.FrameInfo.FourCC == MFX_FOURCC_Y410
 #endif
+#if (MFX_VERSION >= 1031)
+                || in->mfx.FrameInfo.FourCC == MFX_FOURCC_P016
+                || in->mfx.FrameInfo.FourCC == MFX_FOURCC_Y216
+                || in->mfx.FrameInfo.FourCC == MFX_FOURCC_Y416
+#endif
                 )
                 out->mfx.FrameInfo.FourCC = in->mfx.FrameInfo.FourCC;
             else
@@ -786,6 +833,26 @@ mfxStatus Query_H265(VideoCORE *core, mfxVideoParam *in, mfxVideoParam *out, eMF
             out->mfx.FrameInfo.Height = 0;
             sts = MFX_ERR_UNSUPPORTED;
         }
+
+        if (!in->mfx.FrameInfo.Width || (
+            in->mfx.FrameInfo.CropX <= in->mfx.FrameInfo.Width &&
+            in->mfx.FrameInfo.CropY <= in->mfx.FrameInfo.Height &&
+            in->mfx.FrameInfo.CropX + in->mfx.FrameInfo.CropW <= in->mfx.FrameInfo.Width &&
+            in->mfx.FrameInfo.CropY + in->mfx.FrameInfo.CropH <= in->mfx.FrameInfo.Height))
+        {
+            out->mfx.FrameInfo.CropX = in->mfx.FrameInfo.CropX;
+            out->mfx.FrameInfo.CropY = in->mfx.FrameInfo.CropY;
+            out->mfx.FrameInfo.CropW = in->mfx.FrameInfo.CropW;
+            out->mfx.FrameInfo.CropH = in->mfx.FrameInfo.CropH;
+        }
+        else {
+            out->mfx.FrameInfo.CropX = 0;
+            out->mfx.FrameInfo.CropY = 0;
+            out->mfx.FrameInfo.CropW = 0;
+            out->mfx.FrameInfo.CropH = 0;
+            sts = MFX_ERR_UNSUPPORTED;
+        }
+
 
         out->mfx.FrameInfo.FrameRateExtN = in->mfx.FrameInfo.FrameRateExtN;
         out->mfx.FrameInfo.FrameRateExtD = in->mfx.FrameInfo.FrameRateExtD;
@@ -832,6 +899,10 @@ mfxStatus Query_H265(VideoCORE *core, mfxVideoParam *in, mfxVideoParam *out, eMF
         if (   in->mfx.FrameInfo.FourCC == MFX_FOURCC_P010 || in->mfx.FrameInfo.FourCC == MFX_FOURCC_P210
 #if (MFX_VERSION >= 1027)
             || in->mfx.FrameInfo.FourCC == MFX_FOURCC_Y210
+#endif
+#if (MFX_VERSION >= 1031)
+            || in->mfx.FrameInfo.FourCC == MFX_FOURCC_P016 || in->mfx.FrameInfo.FourCC == MFX_FOURCC_Y216
+            || in->mfx.FrameInfo.FourCC == MFX_FOURCC_Y416
 #endif
             )
         {
@@ -977,6 +1048,11 @@ bool CheckVideoParam_H265(mfxVideoParam *in, eMFXHWType type)
         && in->mfx.FrameInfo.FourCC != MFX_FOURCC_Y210
         && in->mfx.FrameInfo.FourCC != MFX_FOURCC_Y410
 #endif
+#if (MFX_VERSION >= 1031)
+        && in->mfx.FrameInfo.FourCC != MFX_FOURCC_P016
+        && in->mfx.FrameInfo.FourCC != MFX_FOURCC_Y216
+        && in->mfx.FrameInfo.FourCC != MFX_FOURCC_Y416
+#endif
         )
         return false;
 
@@ -988,6 +1064,9 @@ bool CheckVideoParam_H265(mfxVideoParam *in, eMFXHWType type)
         in->mfx.CodecProfile != MFX_PROFILE_HEVC_MAIN10 &&
         in->mfx.CodecProfile != MFX_PROFILE_HEVC_MAINSP &&
         in->mfx.CodecProfile != MFX_PROFILE_HEVC_REXT
+#if (MFX_VERSION >= 1032)
+        && in->mfx.CodecProfile != MFX_PROFILE_HEVC_SCC
+#endif
         )
         return false;
 
@@ -998,6 +1077,10 @@ bool CheckVideoParam_H265(mfxVideoParam *in, eMFXHWType type)
     if (   in->mfx.FrameInfo.FourCC == MFX_FOURCC_P010 || in->mfx.FrameInfo.FourCC == MFX_FOURCC_P210
 #if (MFX_VERSION >= 1027)
         || in->mfx.FrameInfo.FourCC == MFX_FOURCC_Y210
+#endif
+#if (MFX_VERSION >= 1031)
+        || in->mfx.FrameInfo.FourCC == MFX_FOURCC_P016 || in->mfx.FrameInfo.FourCC == MFX_FOURCC_Y216
+        || in->mfx.FrameInfo.FourCC == MFX_FOURCC_Y416
 #endif
         )
     {

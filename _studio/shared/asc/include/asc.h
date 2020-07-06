@@ -1,4 +1,4 @@
-// Copyright (c) 2018 Intel Corporation
+// Copyright (c) 2018-2020 Intel Corporation
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -36,6 +36,10 @@ typedef mfxI16(*t_AvgLumaCalc)(pmfxU32 pAvgLineVal, int len);
 typedef void(*t_ME_SAD_8x8_Block_Search)(mfxU8 *pSrc, mfxU8 *pRef, int pitch, int xrange, int yrange, mfxU16 *bestSAD, int *bestX, int *bestY);
 typedef void(*t_ME_SAD_8x8_Block_FSearch)(mfxU8 *pSrc, mfxU8 *pRef, int pitch, int xrange, int yrange, mfxU32 *bestSAD, int *bestX, int *bestY);
 typedef mfxStatus(*t_Calc_RaCa_pic)(mfxU8 *pPicY, mfxI32 width, mfxI32 height, mfxI32 pitch, mfxF64 &RsCs);
+
+typedef mfxU16(*t_ME_SAD_8x8_Block)(mfxU8 *pSrc, mfxU8 *pRef, mfxU32 srcPitch, mfxU32 refPitch);
+typedef void  (*t_ME_VAR_8x8_Block)(mfxU8 *pSrc, mfxU8 *pRef, mfxU8 *pMCref, mfxI16 srcAvgVal, mfxI16 refAvgVal, mfxU32 srcPitch, mfxU32 refPitch, mfxI32 &var, mfxI32 &jtvar, mfxI32 &jtMCvar);
+
 
 class ASCimageData {
 public:
@@ -183,6 +187,9 @@ private:
     t_ImageDiffHistogram       ImageDiffHistogram;
     t_ME_SAD_8x8_Block_Search  ME_SAD_8x8_Block_Search;
     t_Calc_RaCa_pic            Calc_RaCa_pic;
+    
+    t_ME_SAD_8x8_Block         ME_SAD_8x8_Block;
+    t_ME_VAR_8x8_Block         ME_VAR_8x8_Block;
 
     void SubSample_Point(
         pmfxU8 pSrc, mfxU32 srcWidth, mfxU32 srcHeight, mfxU32 srcPitch,
@@ -244,9 +251,9 @@ private:
     mfxStatus CopyFrameSurface(mfxHDL frameHDL);
     void Reset_ASCCmDevice();
     void Set_ASCCmDevice();
-    bool Query_ASCCmDevice();
     ASC_API mfxStatus SetInterlaceMode(ASCFTS interlaceMode);
 public:
+    bool Query_ASCCmDevice();
     ASC_API mfxStatus Init(mfxI32 Width, mfxI32 Height, mfxI32 Pitch, mfxU32 PicStruct, CmDevice* pCmDevice);
     ASC_API void Close();
     ASC_API bool IsASCinitialized();

@@ -453,13 +453,10 @@ mfxStatus MFXVideoDECODE_Close(mfxSession session)
 
     try
     {
-        if (!session->m_pDECODE)
-        {
-            return MFX_ERR_NOT_INITIALIZED;
-        }
+        MFX_CHECK(session->m_pDECODE, MFX_ERR_NOT_INITIALIZED);
 
         // wait until all tasks are processed
-        session->m_pScheduler->WaitForTaskCompletion(session->m_pDECODE.get());
+        session->m_pScheduler->WaitForAllTasksCompletion(session->m_pDECODE.get());
 
         mfxRes = session->m_pDECODE->Close();
         // delete the codec's instance if not plugin
@@ -476,6 +473,8 @@ mfxStatus MFXVideoDECODE_Close(mfxSession session)
     }
 
     MFX_LTRACE_I(MFX_TRACE_LEVEL_API, mfxRes);
+
+    MFX_CHECK_STS(mfxRes);
     return mfxRes;
 }
 

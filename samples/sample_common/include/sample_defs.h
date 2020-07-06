@@ -1,5 +1,5 @@
 /******************************************************************************\
-Copyright (c) 2005-2019, Intel Corporation
+Copyright (c) 2005-2020, Intel Corporation
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
@@ -116,8 +116,7 @@ enum LibVABackend
 #define MSDK_ENC_WAIT_INTERVAL 300000
 #define MSDK_VPP_WAIT_INTERVAL 300000
 #define MSDK_SURFACE_WAIT_INTERVAL 300000
-#define MSDK_DEVICE_FREE_WAIT_INTERVAL 30000
-#define MSDK_WAIT_INTERVAL MSDK_DEC_WAIT_INTERVAL+3*MSDK_VPP_WAIT_INTERVAL+MSDK_ENC_WAIT_INTERVAL // an estimate for the longest pipeline we have in samples
+#define MSDK_WAIT_INTERVAL (MSDK_DEC_WAIT_INTERVAL+3*MSDK_VPP_WAIT_INTERVAL+MSDK_ENC_WAIT_INTERVAL) // an estimate for the longest pipeline we have in samples
 
 #define MSDK_INVALID_SURF_IDX 0xFFFF
 
@@ -166,8 +165,6 @@ enum LibVABackend
 #endif // MSDK_SAFE_DELETE
 
 #define MSDK_ZERO_MEMORY(VAR)                    {memset(&VAR, 0, sizeof(VAR));}
-#define MSDK_MAX(A, B)                           (((A) > (B)) ? (A) : (B))
-#define MSDK_MIN(A, B)                           (((A) < (B)) ? (A) : (B))
 #define MSDK_ALIGN16(value)                      (((value + 15) >> 4) << 4) // round up to a multiple of 16
 #define MSDK_ALIGN32(value)                      (((value + 31) >> 5) << 5) // round up to a multiple of 32
 #define MSDK_ALIGN(value, alignment)             (alignment) * ( (value) / (alignment) + (((value) % (alignment)) ? 1 : 0))

@@ -1,4 +1,4 @@
-// Copyright (c) 2018 Intel Corporation
+// Copyright (c) 2018-2020 Intel Corporation
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -213,14 +213,14 @@ mfxStatus GetExternalFramesCount(VideoCORE* core,
                 mfxF64 outFrameRate = CalculateUMCFramerate(info.FrameRateExtN, info.FrameRateExtD);
 
                 outputFramesCount[ filterIndex ] = (mfxU16)(ceil(outFrameRate / inFrameRate));
-                outputFramesCount[ filterIndex ] = MFX_MAX(outputFramesCount[ filterIndex ], 1);//robustness
+                outputFramesCount[ filterIndex ] = std::max<mfxU16>(outputFramesCount[ filterIndex ], 1);//robustness
 
                 // numInFrames = inFrameRate / inFrameRate = 1;
                 inputFramesCount[ filterIndex ] = 1;
 
                 // after analysis for correct FRC processing we require following equations
-                inputFramesCount[ filterIndex ]  = MFX_MAX( inputFramesCount[ filterIndex ],  MFXVideoVPPFrameRateConversion::GetInFramesCountExt() );
-                outputFramesCount[ filterIndex ] = MFX_MAX( outputFramesCount[ filterIndex ], MFXVideoVPPFrameRateConversion::GetOutFramesCountExt() );
+                inputFramesCount[ filterIndex ]  = std::max<mfxU16>( inputFramesCount[ filterIndex ],  MFXVideoVPPFrameRateConversion::GetInFramesCountExt() );
+                outputFramesCount[ filterIndex ] = std::max<mfxU16>( outputFramesCount[ filterIndex ], MFXVideoVPPFrameRateConversion::GetOutFramesCountExt() );
 
                 break;
             }
@@ -344,7 +344,7 @@ bool IsCompositionMode(mfxVideoParam* pParam)
 
 mfxStatus ExtendedQuery(VideoCORE * core, mfxU32 filterName, mfxExtBuffer* pHint)
 {
-    mfxStatus sts;
+    mfxStatus sts = MFX_ERR_NONE;
     /* Lets find out VA type (Linux, Win or Android) and platform type */
     /* It can be different behaviour for Linux and IVB, Linux and HSW*/
     bool bLinuxAndIVB_HSW_BDW = false;
@@ -403,6 +403,10 @@ mfxStatus ExtendedQuery(VideoCORE * core, mfxU32 filterName, mfxExtBuffer* pHint
         {
             sts = MFX_ERR_NONE;
         }
+    }
+    else if (MFX_EXTBUFF_VPP_SCALING == filterName)
+    {
+        sts = CheckScalingParam(pHint);
     }
     else // ignore
     {

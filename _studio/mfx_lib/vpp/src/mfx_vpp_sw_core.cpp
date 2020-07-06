@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019 Intel Corporation
+// Copyright (c) 2018-2020 Intel Corporation
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -399,12 +399,12 @@ mfxStatus VideoVPPBase::QueryIOSurf(VideoCORE* core, mfxVideoParam *par, mfxFram
         if( !bSWLib )
         {
             // suggested
-            request[VPP_IN].NumFrameSuggested = MFX_MAX(request[VPP_IN].NumFrameSuggested, hwRequest[VPP_IN].NumFrameSuggested);
-            request[VPP_OUT].NumFrameSuggested = MFX_MAX(request[VPP_OUT].NumFrameSuggested, hwRequest[VPP_OUT].NumFrameSuggested);
+            request[VPP_IN].NumFrameSuggested  = std::max(request[VPP_IN].NumFrameSuggested,  hwRequest[VPP_IN].NumFrameSuggested);
+            request[VPP_OUT].NumFrameSuggested = std::max(request[VPP_OUT].NumFrameSuggested, hwRequest[VPP_OUT].NumFrameSuggested);
 
             // min
-            request[VPP_IN].NumFrameMin  = MFX_MAX(request[VPP_IN].NumFrameMin, hwRequest[VPP_IN].NumFrameMin);
-            request[VPP_OUT].NumFrameMin = MFX_MAX(request[VPP_OUT].NumFrameMin, hwRequest[VPP_OUT].NumFrameMin);
+            request[VPP_IN].NumFrameMin  = std::max(request[VPP_IN].NumFrameMin,  hwRequest[VPP_IN].NumFrameMin);
+            request[VPP_OUT].NumFrameMin = std::max(request[VPP_OUT].NumFrameMin, hwRequest[VPP_OUT].NumFrameMin);
         }
 
         mfxU16 vppAsyncDepth = (0 == par->AsyncDepth) ? MFX_AUTO_ASYNC_DEPTH_VALUE : par->AsyncDepth;
@@ -873,7 +873,7 @@ mfxStatus VideoVPPBase::Query(VideoCORE * core, mfxVideoParam *in, mfxVideoParam
 
                                 if(MFX_EXTBUFF_VPP_COMPOSITE == extDoUseIn->AlgList[algIdx])
                                 {
-                                    mfxSts = MFX_ERR_INVALID_VIDEO_PARAM;
+                                    mfxSts = MFX_ERR_UNSUPPORTED;
                                     continue; // stop working with ExtParam[i]
                                 }
 
@@ -916,6 +916,22 @@ mfxStatus VideoVPPBase::Query(VideoCORE * core, mfxVideoParam *in, mfxVideoParam
 
         } // if (in->ExtParam && out->ExtParam && (in->NumExtParam == out->NumExtParam) )
 
+        if (core->GetHWType() < MFX_HW_ICL)
+        {
+            if (out->vpp.Out.FourCC == MFX_FOURCC_P010 &&
+                out->vpp.In.FourCC  != MFX_FOURCC_NV12 &&
+                out->vpp.In.FourCC  != MFX_FOURCC_YV12 &&
+                out->vpp.In.FourCC  != MFX_FOURCC_YUY2 &&
+                out->vpp.In.FourCC  != MFX_FOURCC_RGB4 &&
+                out->vpp.In.FourCC  != MFX_FOURCC_P010) {
+                if( out->vpp.In.FourCC )
+                {
+                    out->vpp.In.FourCC = 0;
+                    mfxSts = MFX_ERR_UNSUPPORTED;
+                }
+            }
+        }
+
         if ( out->vpp.In.FourCC  != MFX_FOURCC_P010 &&
              out->vpp.In.FourCC  != MFX_FOURCC_P210 &&
              out->vpp.Out.FourCC == MFX_FOURCC_A2RGB10 ){
@@ -929,6 +945,7 @@ mfxStatus VideoVPPBase::Query(VideoCORE * core, mfxVideoParam *in, mfxVideoParam
         if ( out->vpp.In.FourCC  == MFX_FOURCC_P010 &&
              out->vpp.Out.FourCC != MFX_FOURCC_A2RGB10 &&
              out->vpp.Out.FourCC != MFX_FOURCC_NV12 &&
+             out->vpp.Out.FourCC != MFX_FOURCC_YV12 &&
              out->vpp.Out.FourCC != MFX_FOURCC_P010 &&
              out->vpp.Out.FourCC != MFX_FOURCC_P210 &&
              out->vpp.Out.FourCC != MFX_FOURCC_YUY2 &&
@@ -962,6 +979,11 @@ mfxStatus VideoVPPBase::Query(VideoCORE * core, mfxVideoParam *in, mfxVideoParam
 #if (MFX_VERSION >= 1027)
             out->vpp.In.FourCC != MFX_FOURCC_Y210 &&
             out->vpp.In.FourCC != MFX_FOURCC_Y410 &&
+#endif
+#if (MFX_VERSION >= 1031)
+            out->vpp.In.FourCC != MFX_FOURCC_P016 &&
+            out->vpp.In.FourCC != MFX_FOURCC_Y216 &&
+            out->vpp.In.FourCC != MFX_FOURCC_Y416 &&
 #endif
             out->vpp.In.FourCC != MFX_FOURCC_AYUV)
         {
@@ -1029,6 +1051,11 @@ mfxStatus VideoVPPBase::Query(VideoCORE * core, mfxVideoParam *in, mfxVideoParam
 #if (MFX_VERSION >= 1027)
             out->vpp.Out.FourCC != MFX_FOURCC_Y210 &&
             out->vpp.Out.FourCC != MFX_FOURCC_Y410 &&
+#endif
+#if (MFX_VERSION >= 1031)
+            out->vpp.Out.FourCC != MFX_FOURCC_P016 &&
+            out->vpp.Out.FourCC != MFX_FOURCC_Y216 &&
+            out->vpp.Out.FourCC != MFX_FOURCC_Y416 &&
 #endif
             out->vpp.Out.FourCC != MFX_FOURCC_AYUV &&
             out->vpp.Out.FourCC != MFX_FOURCC_A2RGB10 )
@@ -1112,7 +1139,9 @@ mfxStatus VideoVPPBase::Query(VideoCORE * core, mfxVideoParam *in, mfxVideoParam
             }
             else
             {
-                hwQuerySts = MFX_WRN_PARTIAL_ACCELERATION;
+                // doesn't support sw fallback now so return MFX_ERR_UNSUPPORTED
+                // will return MFX_WRN_PARTIAL_ACCELERATION after enabling sw fallback
+                hwQuerySts = MFX_ERR_UNSUPPORTED;
             }
         }
         else
@@ -1313,6 +1342,10 @@ mfxStatus VideoVPP_HW::InternalInit(mfxVideoParam *par)
     {
         bIsFilterSkipped = true;
         sts = MFX_ERR_NONE;
+    }
+    if (MFX_WRN_PARTIAL_ACCELERATION == sts) // doesn't support sw fallback
+    {
+        sts = MFX_ERR_INVALID_VIDEO_PARAM;
     }
     if (MFX_ERR_NONE != sts)
     {

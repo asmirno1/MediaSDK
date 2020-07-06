@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019 Intel Corporation
+// Copyright (c) 2018-2020 Intel Corporation
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -257,23 +257,6 @@ namespace MfxHwH264Encode
     template <class T> struct GetPointedType {};
     template <class T> struct GetPointedType<T *> { typedef T Type; };
     template <class T> struct GetPointedType<T const *> { typedef T Type; };
-
-
-    inline bool IsOn(mfxU32 opt)
-    {
-        return opt == MFX_CODINGOPTION_ON;
-    }
-
-    inline bool IsOff(mfxU32 opt)
-    {
-        return opt == MFX_CODINGOPTION_OFF;
-    }
-
-    inline bool IsAdapt(mfxU32 opt)
-    {
-        return opt == MFX_CODINGOPTION_ADAPTIVE;
-    }
-
 
     struct HrdParameters
     {
@@ -622,6 +605,7 @@ namespace MfxHwH264Encode
 
             mfxU16 widthLa;
             mfxU16 heightLa;
+            mfxU32 TCBRCTargetFrameSize;
         } calcParam;
     };
 
@@ -780,6 +764,7 @@ namespace MfxHwH264Encode
     void InheritDefaultValues(
         MfxVideoParam const & parInit,
         MfxVideoParam &       parReset,
+        MFX_ENCODE_CAPS const & hwCaps,
         mfxVideoParam const * parResetIn = 0);
 
     mfxStatus CheckPayloads(
@@ -917,6 +902,21 @@ namespace MfxHwH264Encode
         }
     }
 
+    inline mfxU32 GetAvgFrameSizeInBytes(const MfxVideoParam &  par, bool bMaxKbps)
+    {
+        return mfxU32(1000.0 / 8.0*((par.mfx.MaxKbps && bMaxKbps) ? par.mfx.MaxKbps : par.mfx.TargetKbps) * std::max<mfxU32>(par.mfx.BRCParamMultiplier,1) /
+            (mfxF64(par.mfx.FrameInfo.FrameRateExtN) / par.mfx.FrameInfo.FrameRateExtD) );
+    }
+    inline bool IsTCBRC(const MfxVideoParam &  par, MFX_ENCODE_CAPS const & hwCaps)
+    {
+        mfxExtCodingOption3 &extOpt3 = GetExtBufferRef(par);
+        mfxExtCodingOption  &extOpt = GetExtBufferRef(par);
+        return (IsOn(extOpt3.LowDelayBRC) && (hwCaps.ddi_caps.TCBRCSupport) && IsOff(extOpt.NalHrdConformance) &&
+               (par.mfx.RateControlMethod  ==  MFX_RATECONTROL_VBR  ||
+                par.mfx.RateControlMethod  ==  MFX_RATECONTROL_QVBR ||
+                par.mfx.RateControlMethod  ==  MFX_RATECONTROL_VCM ));
+    }
+
     inline mfxU8 GetPayloadLayout(mfxU32 fieldPicFlag, mfxU32 secondFieldPicFlag)
     {
         return fieldPicFlag == 0
@@ -940,7 +940,16 @@ namespace MfxHwH264Encode
 
     mfxU8 ConvertMfxFrameType2SliceType(mfxU8 type);
 
-    ENCODE_FRAME_SIZE_TOLERANCE ConvertLowDelayBRCMfx2Ddi(mfxU16 type);
+    ENCODE_FRAME_SIZE_TOLERANCE ConvertLowDelayBRCMfx2Ddi(mfxU16 type, bool bTCBRC);
+
+    enum class SliceDividerType
+    {
+        ONESLICE            = 0, // Once slice for the whole frame
+        ROW2ROW             = 1, // Slices are power of 2 number of rows, all slices the same
+        ROWSLICE            = 2, // Slices are any number of rows, all slices the same
+        ARBITRARY_ROW_SLICE = 3, // Slices are any number of rows, slices can be different
+        ARBITRARY_MB_SLICE  = 4, // Slices are any number of MBs, slices can be different
+    };
 
     struct MfxMemId
     {
@@ -1169,9 +1178,9 @@ namespace MfxHwH264Encode
     };
 
 
-    struct SliceDividerBluRay : SliceDivider
+    struct SliceDividerArbitraryRowSlice : SliceDivider
     {
-        SliceDividerBluRay(
+        SliceDividerArbitraryRowSlice(
             mfxU32 numSlice,
             mfxU32 widthInMbs,
             mfxU32 heightInMbs);
@@ -1180,9 +1189,9 @@ namespace MfxHwH264Encode
     };
 
 
-    struct SliceDividerSnb : SliceDivider
+    struct SliceDividerRow2Row : SliceDivider
     {
-        SliceDividerSnb(
+        SliceDividerRow2Row(
             mfxU32 numSlice,
             mfxU32 widthInMbs,
             mfxU32 heightInMbs);
@@ -1193,9 +1202,9 @@ namespace MfxHwH264Encode
     };
 
 
-    struct SliceDividerHsw : SliceDivider
+    struct SliceDividerRowSlice : SliceDivider
     {
-        SliceDividerHsw(
+        SliceDividerRowSlice(
             mfxU32 numSlice,
             mfxU32 widthInMbs,
             mfxU32 heightInMbs);
@@ -1231,7 +1240,7 @@ namespace MfxHwH264Encode
         static bool Next(SliceDividerState & state);
     };
     SliceDivider MakeSliceDivider(
-        mfxU32  sliceHwCaps,
+        SliceDividerType sliceHwCaps,
         mfxU32  sliceSizeInMbs,
         mfxU32  numSlice,
         mfxU32  widthInMbs,

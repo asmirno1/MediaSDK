@@ -1,5 +1,5 @@
 /******************************************************************************\
-Copyright (c) 2005-2019, Intel Corporation
+Copyright (c) 2005-2020, Intel Corporation
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
@@ -20,10 +20,6 @@ or https://software.intel.com/en-us/media-client-solutions-support.
 #include <stdio.h>
 #include <stdexcept> // for std::exception on Linux
 #include "sample_opencl_plugin.h"
-
-// disable "unreferenced formal parameter" warning -
-// not all formal parameters of interface functions will be used by sample plugin
-#pragma warning(disable : 4100)
 
 //defining module template for generic plugin
 #include "mfx_plugin_module.h"
@@ -72,20 +68,17 @@ mfxStatus Rotate::PluginInit(mfxCoreInterface *core)
     m_pmfxCore = new mfxCoreInterface;
     MSDK_CHECK_POINTER(m_pmfxCore, MFX_ERR_MEMORY_ALLOC);
     *m_pmfxCore = *core;
-    mfxCoreParam par = {0};
+    mfxCoreParam par = {};
     sts = m_pmfxCore->GetCoreParam(m_pmfxCore->pthis, &par);
     MSDK_CHECK_STATUS(sts, "m_pmfxCore->GetCoreParam failed");
     m_impl = par.Impl;
 
-    mfxHDL hdl = 0;
 #if defined(_WIN32) || defined(_WIN64)
     if (MFX_IMPL_VIA_MASK(m_impl) == MFX_IMPL_VIA_D3D9) {
         sts = m_pmfxCore->GetHandle(m_pmfxCore->pthis, MFX_HANDLE_D3D9_DEVICE_MANAGER, &m_device);
     }
     else if (MFX_IMPL_VIA_MASK(m_impl) == MFX_IMPL_VIA_D3D11) {
         sts = m_pmfxCore->GetHandle(m_pmfxCore->pthis, MFX_HANDLE_D3D11_DEVICE, &m_device);
-    } else {
-        hdl = 0;
     }
 #else
     sts = m_pmfxCore->GetHandle(m_pmfxCore->pthis, MFX_HANDLE_VA_DISPLAY, &m_device);
@@ -653,10 +646,10 @@ void OpenCLRotator180Context::CreateBuffers(const cl::size_t<3> &Y_size,
 
 void OpenCLRotator180Context::SetKernelArgs()
 {
-    m_kernelY .setArg(0, m_InY());
-    m_kernelY .setArg(1, m_OutY());
-    m_kernelUV.setArg(0, m_InUV());
-    m_kernelUV.setArg(1, m_OutUV());
+    m_kernelY .setArg(0, m_InY);
+    m_kernelY .setArg(1, m_OutY);
+    m_kernelUV.setArg(0, m_InUV);
+    m_kernelUV.setArg(1, m_OutUV);
 }
 
 void OpenCLRotator180Context::Rotate(size_t width, size_t height,

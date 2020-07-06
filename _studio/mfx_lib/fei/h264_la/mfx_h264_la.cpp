@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019 Intel Corporation
+// Copyright (c) 2018-2020 Intel Corporation
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -47,20 +47,23 @@
 #include "mfx_ext_buffers.h"
 
 using namespace MfxEncLA;
-using MfxHwH264Encode::IsOn;
 
 static mfxU16 GetGopSize(mfxVideoParam *par)
 {
     return  par->mfx.GopPicSize == 0 ?  256 : par->mfx.GopPicSize ;
 }
-static mfxU16 GetRefDist(mfxVideoParam *par)
+static mfxU16 GetRefDist(mfxVideoParam *par, eMFXHWType targetHw)
 {
     mfxU16 GopSize = GetGopSize(par);
     mfxU16 refDist = par->mfx.GopRefDist;
     if (refDist == 0)
     {
         mfxExtLAControl *pControl = (mfxExtLAControl *)GetExtBuffer(par->ExtParam, par->NumExtParam, MFX_EXTBUFF_LOOKAHEAD_CTRL);
-        refDist = IsOn(par->mfx.LowPower) ? 1 : ((pControl && IsOn(pControl->BPyramid)) ? 8 : 3);
+        refDist = (
+		    IsOn(par->mfx.LowPower)
+         && targetHw <= MFX_HW_TGL_LP )
+		  ? 1 
+		  : ((pControl && IsOn(pControl->BPyramid)) ? 8 : 3);
     }
     return (std::min)(refDist, GopSize);
 }
@@ -68,7 +71,7 @@ static mfxU16 GetAsyncDeph(mfxVideoParam *par)
 {
     return par->AsyncDepth == 0 ? 3 : par->AsyncDepth;
 }
-static mfxStatus InitEncoderParameters(mfxVideoParam *par_in, mfxVideoParam *par_enc)
+static mfxStatus InitEncoderParameters(mfxVideoParam *par_in, mfxVideoParam *par_enc, eMFXHWType targetHw)
 {
     mfxExtLAControl *pControl = (mfxExtLAControl *) GetExtBuffer(par_in->ExtParam, par_in->NumExtParam, MFX_EXTBUFF_LOOKAHEAD_CTRL);
 
@@ -82,7 +85,7 @@ static mfxStatus InitEncoderParameters(mfxVideoParam *par_in, mfxVideoParam *par
     par_enc->AsyncDepth = GetAsyncDeph(par_in);
     par_enc->IOPattern  = par_in->IOPattern;
     par_enc->mfx.GopPicSize = GetGopSize(par_in);
-    par_enc->mfx.GopRefDist = GetRefDist(par_in);
+    par_enc->mfx.GopRefDist = GetRefDist(par_in, targetHw);
     par_enc->mfx.RateControlMethod = MFX_RATECONTROL_LA;
     par_enc->mfx.NumRefFrame = 2;
     par_enc->mfx.FrameInfo = par_in->mfx.FrameInfo;  
@@ -222,11 +225,10 @@ mfxStatus VideoENC_LA::Query(VideoCORE* pCore, mfxVideoParam *in, mfxVideoParam 
             inPattern == MFX_IOPATTERN_IN_OPAQUE_MEMORY,
             MFX_ERR_INVALID_VIDEO_PARAM);
 
-       memset (&out->mfx,0,sizeof(out->mfx));
        out->mfx.CodecId = in->mfx.CodecId ;
        out->mfx.GopPicSize = in->mfx.GopPicSize;
        out->mfx.GopRefDist = in->mfx.GopRefDist;
-       out->mfx.FrameInfo.Width = in->mfx.GopRefDist;;
+       out->mfx.FrameInfo.Width = in->mfx.FrameInfo.Width;
        out->mfx.FrameInfo.Height = in->mfx.FrameInfo.Height;
        out->mfx.TargetUsage = in->mfx.TargetUsage;
 
@@ -279,9 +281,9 @@ mfxStatus VideoENC_LA::Query(VideoCORE* pCore, mfxVideoParam *in, mfxVideoParam 
     return MFX_ERR_NONE;
 }
 
-mfxStatus VideoENC_LA::QueryIOSurf(VideoCORE* , mfxVideoParam *par, mfxFrameAllocRequest *request)
+mfxStatus VideoENC_LA::QueryIOSurf(VideoCORE* core, mfxVideoParam *par, mfxFrameAllocRequest *request)
 {
-    MFX_CHECK_NULL_PTR2(par,request);
+    MFX_CHECK_NULL_PTR3(par,request,core);
 
     mfxExtLAControl *pControl = (mfxExtLAControl *) GetExtBuffer(par->ExtParam, par->NumExtParam, MFX_EXTBUFF_LOOKAHEAD_CTRL);
 
@@ -309,7 +311,7 @@ mfxStatus VideoENC_LA::QueryIOSurf(VideoCORE* , mfxVideoParam *par, mfxFrameAllo
             ? MFX_MEMTYPE_OPAQUE_FRAME
             : MFX_MEMTYPE_EXTERNAL_FRAME;
     }
-    request->NumFrameMin         = GetRefDist(par) + GetAsyncDeph(par) + pControl->LookAheadDepth;
+    request->NumFrameMin         = GetRefDist(par, core->GetHWType()) + GetAsyncDeph(par) + pControl->LookAheadDepth;
     request->NumFrameSuggested   = request->NumFrameMin;
     request->Info                = par->mfx.FrameInfo;
 
@@ -452,7 +454,7 @@ mfxStatus VideoENC_LA::Init(mfxVideoParam *par)
         ddi_opt.LaScaleFactor = m_LaControl.DownScaleFactor = CheckScaleFactor(m_LaControl.DownScaleFactor, par->mfx.TargetUsage, par->mfx.FrameInfo.Width > 4000);
         ddi_opt.LookAheadDependency =  m_LaControl.DependencyDepth = CheckLookAheadDependency(m_LaControl.DependencyDepth,par->mfx.TargetUsage);
 
-        MFX_CHECK_STS (InitEncoderParameters(par, &par_enc));    
+        MFX_CHECK_STS (InitEncoderParameters(par, &par_enc, m_core->GetHWType()));
         m_video = par_enc;
     
          MFX_ENCODE_CAPS hwCaps = {};
@@ -479,6 +481,33 @@ mfxStatus VideoENC_LA::Init(mfxVideoParam *par)
 
     mfxFrameAllocRequest request = { };
     request.Info = m_video.mfx.FrameInfo;
+
+    if (m_video.IOPattern == MFX_IOPATTERN_IN_SYSTEM_MEMORY)
+    {
+        request.Type        = MfxHwH264Encode::MFX_MEMTYPE_D3D_INT;
+        request.NumFrameMin = mfxU16(m_video.mfx.NumRefFrame + m_video.AsyncDepth + (bPyramid ? 2 : 0));
+
+        sts = m_raw.Alloc(m_core, request, true);
+        MFX_CHECK_STS(sts);
+    }
+    else if (m_video.IOPattern == MFX_IOPATTERN_IN_OPAQUE_MEMORY)
+    {
+        auto extOpaq = (mfxExtOpaqueSurfaceAlloc *)GetExtBuffer(par->ExtParam, par->NumExtParam, MFX_EXTBUFF_OPAQUE_SURFACE_ALLOCATION);
+        MFX_CHECK_NULL_PTR1(extOpaq);
+
+        request.Type        = extOpaq->In.Type;
+        request.NumFrameMin = extOpaq->In.NumSurface;
+
+        sts = m_opaqResponse.Alloc(m_core, request, extOpaq->In.Surfaces, extOpaq->In.NumSurface);
+        MFX_CHECK_STS(sts);
+
+        if (extOpaq->In.Type & MFX_MEMTYPE_SYSTEM_MEMORY)
+        {
+            request.Type        = MfxHwH264Encode::MFX_MEMTYPE_D3D_INT;
+            request.NumFrameMin = extOpaq->In.NumSurface;
+            sts = m_raw.Alloc(m_core, request, true);
+        }
+    }
 
     request.Info.Width  = m_video.calcParam.widthLa / 16 * sizeof(MfxHwH264Encode::LAOutObject);
     request.Info.Height = m_video.calcParam.widthLa/ 16;
@@ -509,33 +538,6 @@ mfxStatus VideoENC_LA::Init(mfxVideoParam *par)
 
         sts = m_rawLa.AllocCmSurfaces(m_cmDevice, request);
         MFX_CHECK_STS(sts);
-    }
-    
-    if (m_video.IOPattern == MFX_IOPATTERN_IN_SYSTEM_MEMORY)
-    {
-        request.Type        = MfxHwH264Encode::MFX_MEMTYPE_D3D_INT;
-        request.NumFrameMin = mfxU16(m_video.mfx.NumRefFrame + m_video.AsyncDepth + (bPyramid ? 2 : 0));
-
-        sts = m_raw.Alloc(m_core, request, true);
-        MFX_CHECK_STS(sts);
-    }
-    else if (m_video.IOPattern == MFX_IOPATTERN_IN_OPAQUE_MEMORY)
-    {
-        auto extOpaq = (mfxExtOpaqueSurfaceAlloc *)GetExtBuffer(par->ExtParam, par->NumExtParam, MFX_EXTBUFF_OPAQUE_SURFACE_ALLOCATION);
-        MFX_CHECK_NULL_PTR1(extOpaq);
-
-        request.Type        = extOpaq->In.Type;
-        request.NumFrameMin = extOpaq->In.NumSurface;
-
-        sts = m_opaqResponse.Alloc(m_core, request, extOpaq->In.Surfaces, extOpaq->In.NumSurface);
-        MFX_CHECK_STS(sts);
-
-        if (extOpaq->In.Type & MFX_MEMTYPE_SYSTEM_MEMORY)
-        {
-            request.Type        = MfxHwH264Encode::MFX_MEMTYPE_D3D_INT;
-            request.NumFrameMin = extOpaq->In.NumSurface;
-            sts = m_raw.Alloc(m_core, request, true);
-        }
     }
     m_bInit = true;
     return MFX_ERR_NONE;
@@ -757,7 +759,8 @@ mfxFrameSurface1 * VideoENC_LA::GetFrameToVME()
         return 0;
 }
 
-
+//SubmitFrameLARoutine and QueryFrameLARoutine may be needed if we use a double entry point
+#if 0
 static mfxStatus SubmitFrameLARoutine(void *pState, void * pParam, mfxU32 /*threadNumber*/, mfxU32 /*callNumber*/)
 {
     mfxStatus tskRes;
@@ -787,6 +790,8 @@ static mfxStatus QueryFrameLARoutine(void *pState, void *pParam, mfxU32 /*thread
     return tskRes;
 
 } // mfxStatus RunFrameVPPRoutine(void *pState, void *pParam, mfxU32 threadNumber, mfxU32 callNumber)
+#endif
+
 static mfxStatus RunFrameVPPRoutine(void *pState, void *pParam, mfxU32 /*threadNumber*/, mfxU32 /*callNumber*/)
 {
     mfxStatus sts = MFX_ERR_NONE;
@@ -1641,11 +1646,10 @@ namespace MfxHwH264EncodeHW
         mfxU32 pocL0,
         mfxU32 pocL1)
     {
-        mfxI32 tb = MFX_MIN(MFX_MAX(-128, mfxI32(pocCur - pocL0)), 127);
-        mfxI32 td = MFX_MIN(MFX_MAX(-128, mfxI32(pocL1  - pocL0)), 127);
+        mfxI32 tb = mfx::clamp(mfxI32(pocCur - pocL0), -128, 127);
+        mfxI32 td = mfx::clamp(mfxI32(pocL1  - pocL0), -128, 127);
         mfxI32 tx = (16384 + abs(td/2)) / td;
-        mfxI32 distScaleFactor = MFX_MIN(MFX_MAX(-1024, (tb * tx + 32) >> 6), 1023);
-        return distScaleFactor;
+        return mfx::clamp((tb * tx + 32) >> 6, -1024, 1023);
     }
 
 
@@ -1944,6 +1948,8 @@ mfxStatus CmContextLA::QueryVme(sLADdiTask const & task,
 {
     MFX_AUTO_LTRACE(MFX_TRACE_LEVEL_INTERNAL, "QueryVme");
 
+    MFX_CHECK_NULL_PTR1(e);
+
     INT status = e->WaitForTaskFinished();
     if (status == CM_EXCEED_MAX_TIMEOUT)
         return MFX_ERR_GPU_HANG;
@@ -1952,6 +1958,8 @@ mfxStatus CmContextLA::QueryVme(sLADdiTask const & task,
 
     MfxHwH264Encode::LAOutObject * cmMb = (MfxHwH264Encode::LAOutObject *)task.m_cmMbSys;
     MfxHwH264Encode::VmeData *      cur  = task.m_Curr.VmeData;
+
+    MFX_CHECK_NULL_PTR2(cmMb, cur);
 
     { MFX_AUTO_LTRACE(MFX_TRACE_LEVEL_INTERNAL, "Compensate costs");
     MfxHwH264Encode::mfxVMEUNIIn const & costs = SelectCosts(task.m_TaskInfo.InputFrame.frameType);
@@ -1975,7 +1983,7 @@ mfxStatus CmContextLA::QueryVme(sLADdiTask const & task,
             mfxU32 modeCostLambda = Map44LutValueBack(costs.ModeCost[LUTMODE_INTER_16x16]);
             mfxU32 mvCostLambda   = (task.m_TaskInfo.InputFrame.frameType & MFX_FRAMETYPE_P)
                 ? GetVmeMvCostP(m_lutMvP, mb) : GetVmeMvCostB(m_lutMvB, mb);
-            mfxU16 bitCostLambda = mfxU16(MFX_MIN(mb.interCost, modeCostLambda + mvCostLambda));
+            mfxU16 bitCostLambda = mfxU16(std::min<mfxU32>(mb.interCost, modeCostLambda + mvCostLambda));
             mb.dist = mb.interCost - bitCostLambda;
         }
     }
@@ -1991,7 +1999,7 @@ mfxStatus CmContextLA::QueryVme(sLADdiTask const & task,
     for (size_t i = 0; i < cur->mb.size(); i++)
     {
         cur->mb[i].intraCost     = cmMb[i].intraCost;
-        cur->mb[i].interCost     = MFX_MIN(cmMb[i].intraCost, cmMb[i].interCost);
+        cur->mb[i].interCost     = std::min(cmMb[i].intraCost, cmMb[i].interCost);
         cur->mb[i].intraMbFlag   = cmMb[i].IntraMbFlag;
         cur->mb[i].skipMbFlag    = cmMb[i].SkipMbFlag;
         cur->mb[i].mbType        = cmMb[i].MbType5Bits;

@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2019 Intel Corporation
+// Copyright (c) 2017-2020 Intel Corporation
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -556,7 +556,7 @@ static bool IsSameVideoParam(mfxVideoParam *newPar, mfxVideoParam *oldPar)
         return false;
     }
 
-    int32_t asyncDepth = MFX_MIN(newPar->AsyncDepth, MFX_MAX_ASYNC_DEPTH_VALUE);
+    int32_t asyncDepth = std::min<int32_t>(newPar->AsyncDepth, MFX_MAX_ASYNC_DEPTH_VALUE);
     if (asyncDepth != oldPar->AsyncDepth)
     {
         return false;
@@ -915,6 +915,10 @@ static mfxStatus CheckFrameInfo(mfxFrameInfo const &currInfo, mfxFrameInfo &info
         case MFX_FOURCC_Y410:
 #endif
             break;
+#if (MFX_VERSION >= 1031)
+        case MFX_FOURCC_P016:
+        case MFX_FOURCC_Y416:
+#endif
         case MFX_FOURCC_P010:
 #if (MFX_VERSION >= 1027)
         case MFX_FOURCC_Y210:
@@ -1016,8 +1020,14 @@ mfxStatus VideoDECODEVP9_HW::DecodeFrameCheck(mfxBitstream *bs, mfxFrameSurface1
 
     MFX_VP9_Utility::FillVideoParam(m_core->GetPlatformType(), frameInfo, m_vPar);
 
+    // check bit depth change
+    MFX_CHECK((m_vPar.mfx.FrameInfo.BitDepthLuma == surface_work->Info.BitDepthLuma &&
+                m_vPar.mfx.FrameInfo.BitDepthChroma == surface_work->Info.BitDepthChroma),
+                MFX_ERR_INCOMPATIBLE_VIDEO_PARAM);
+
     // check resize
-    if (m_vPar.mfx.FrameInfo.Width > surface_work->Info.Width || m_vPar.mfx.FrameInfo.Height > surface_work->Info.Height)
+    if (m_vPar.mfx.FrameInfo.Width > surface_work->Info.Width ||
+        m_vPar.mfx.FrameInfo.Height > surface_work->Info.Height)
     {
         MFX_CHECK(m_adaptiveMode, MFX_ERR_INCOMPATIBLE_VIDEO_PARAM);
         return MFX_ERR_REALLOC_SURFACE;

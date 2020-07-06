@@ -254,9 +254,6 @@ function(configure_universal_target target)
   if (PKG_WAYLAND_CLIENT_FOUND)
     configure_target(${ARGV0} "${PKG_WAYLAND_CLIENT_CFLAGS}" "${PKG_WAYLAND_CLIENT_LIBRARY_DIRS}")
     set(LOCAL_CFLAGS "${LOCAL_CFLAGS} -DLIBVA_WAYLAND_SUPPORT")
-    if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5.0)
-       set(LOCAL_CFLAGS "${LOCAL_CFLAGS} -fno-devirtualize-speculatively")
-    endif()
   endif()
 
   set(SCOPE_CFLAGS "${SCOPE_CFLAGS} ${LOCAL_CFLAGS}" PARENT_SCOPE)
@@ -484,9 +481,9 @@ if( Linux )
   find_package(PkgConfig REQUIRED)
 
   # required:
-  pkg_check_modules(PKG_LIBVA     REQUIRED libva>=0.33)
+  pkg_check_modules(PKG_LIBVA     REQUIRED libva>=1.5.0)
   pkg_check_modules(PKG_LIBDRM    REQUIRED libdrm)
-  pkg_check_modules(PKG_LIBVA_DRM REQUIRED libva-drm>=0.33)
+  pkg_check_modules(PKG_LIBVA_DRM REQUIRED libva-drm>=1.5.0)
 
   # optional:
   pkg_check_modules( PKG_MFX       libmfx>=1.28 )
@@ -497,7 +494,7 @@ if( Linux )
     endif()
 
     pkg_check_modules( PKG_X11       ${X11_REQUIRED} x11 )
-    pkg_check_modules( PKG_LIBVA_X11 ${X11_REQUIRED} libva-x11>=0.33 )
+    pkg_check_modules( PKG_LIBVA_X11 ${X11_REQUIRED} libva-x11>=1.5.0 )
 
     if ( PKG_X11_FOUND AND PKG_LIBVA_X11_FOUND )
       set( ENABLE_X11 ON )

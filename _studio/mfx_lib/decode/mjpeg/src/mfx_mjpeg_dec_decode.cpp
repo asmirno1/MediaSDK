@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019 Intel Corporation
+// Copyright (c) 2018-2020 Intel Corporation
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -28,6 +28,7 @@
 #include "mfx_common_decode_int.h"
 
 #ifdef MFX_ENABLE_SW_FALLBACK
+#include <ippcore.h> // for MfxIppInit()
 #include "mfx_mjpeg_task.h"
 #include "umc_mjpeg_mfx_decode.h"
 #include "mfx_thread_task.h"
@@ -663,7 +664,7 @@ mfxStatus VideoDECODEMJPEG::DecodeFrameCheck(mfxBitstream *bs, mfxFrameSurface1 
     // It can be useful to run threads right after first frame receive
     MFX_SAFE_CALL(DecodeFrameCheck(bs, surface_work, surface_out));
 
-    UMC::FrameData *dst;
+    UMC::FrameData *dst = nullptr;
     MFX_SAFE_CALL(decoder->AllocateFrameData(dst));
 
     {
@@ -2019,6 +2020,9 @@ VideoDECODEMJPEGBase_SW::VideoDECODEMJPEGBase_SW()
 
 mfxStatus VideoDECODEMJPEGBase_SW::Init(mfxVideoParam *decPar, mfxFrameAllocRequest *request, mfxFrameAllocResponse *response, mfxFrameAllocRequest *, bool isUseExternalFrames, VideoCORE *core)
 {
+    auto ippSt = MfxIppInit();
+    MFX_CHECK(ippSt == ippStsNoErr, MFX_ERR_UNSUPPORTED);
+
     UMC::Status umcSts = m_FrameAllocator->InitMfx(0, core, decPar, request, response, isUseExternalFrames, true);
     MFX_CHECK(umcSts == UMC::UMC_OK, MFX_ERR_MEMORY_ALLOC);
 

@@ -7,7 +7,7 @@ Contacts: Miroslav Goncharenko (miroslav.goncharenko\@intel.com)
 
 This document introduces code guide which should highlight some most common issues and bad practices existing in MSDK library's code. This document doesn't cover questions related to comments, code alignment, spaces/tabs and naming conventions. It focuses on code, logic and implementation.
 
-These tips shouldn't be considered as strict rules, they are just good piece of advice on how to implement your solution in modern C++. But please be sure to know recommended way before implementing something different. Violations of these rules must be committed consciously, other ways better solution is most likely just to follow guidelines.
+These tips shouldn't be considered as strict rules, they are just good piece of advice on how to implement your solution in modern C++. But please be sure to know recommended way before implementing something different. Violations of these rules must be committed consciously, otherwise better solution is most likely just to follow guidelines.
 
 Feel free to improve this document. Bring more examples and rules. But please try to keep size of document small enough. This document is for wide audience of developers, so avoid insufficient details and rare cases.
 
@@ -30,7 +30,7 @@ Feel free to improve this document. Bring more examples and rules. But please tr
   
 # General rules
 
-1.  Do not overcomplicate your code, every single block which makes some work should be as local as it possible. Person who reads the code should receive minimal context to understand the logic.
+1.  Do not overcomplicate your code, every single block which makes some work should be as local as possible. Person who reads the code should receive minimal context to understand the logic.
 
     - Keep variables definition local, i.e. as close to usage as possible.
     
@@ -85,11 +85,11 @@ Feel free to improve this document. Bring more examples and rules. But please tr
 
     - Limit it to bare minimum.
 
-    - Prefer limiting scope of include. Do not put everything to some common header which will propagate it's content to all translation units which don't need it.
+    - Prefer limiting scope of include. Do not put everything to some common header which will propagate its content to all translation units which don't need it.
 
-    - Try to capture the balance between spreading headers to many source files, which makes dependency graph more complicated and accumulating many of the headers to some common include header, which may lead to significant code size inflation after preprocessing.
+    - Try to capture the balance between spreading headers to many source files, which makes dependency graph more complicated, and accumulating many of the headers to some common include header, which may lead to significant code size inflation after preprocessing.
 
-    - Prefer to use forward declaration instead of including a header if you don't need complete type.
+    - Prefer using forward declaration instead of including a header if you don't need complete type.
 
     - Do not put using declarations in headers. It could lead to undesired scope expansion.
 
@@ -97,7 +97,7 @@ Feel free to improve this document. Bring more examples and rules. But please tr
 
 6.  Use macro only if you want some compile-time instrumentation.
 
-    - Other ways use functions, templates and constants.
+    - Otherwise use functions, templates and constants.
 
       Example:
       ```
@@ -115,16 +115,39 @@ Feel free to improve this document. Bring more examples and rules. But please tr
       // will become
       ((++i) > (j) ? (++i) : j) // twice incremented, it is an unwanted side effect
       ```
+    - If macro contains ```if``` statements, it should be put in new local scope with ```{}``` to prevent unexpected behavior in nested ```if``` / ```else``` constructions.
+
+      Example:
+      ```
+      #define MFX_CHECK_UMC_ALLOC(err) if (err != true) {return MFX_ERR_MEMORY_ALLOC;}
+      ...
+      if (report_errors)
+        MFX_CHECK_UMC_ALLOC(ret_sts);
+      else
+        ret_sts = ERR_NONE; // After macro expansion this 'else' corresponds to 'if (err != true)' and not to 'if (report_errors)'.
+                            // This is undesirable side effect.
+      ```
+
+      Fix:
+      ```
+      #define MFX_CHECK_UMC_ALLOC(err) { if (err != true) {return MFX_ERR_MEMORY_ALLOC;} }
+      ...
+      if (report_errors)
+        MFX_CHECK_UMC_ALLOC(ret_sts);
+      else
+        ret_sts = ERR_NONE; // No problems now
+      ```
+
     - Use ```MFX_CHECK``` / ```MFX_RETURN``` / ```MFX_CHECK_STS``` macro for ```mfxStatus``` checks. It allows to turn on tracing.
 
       Hint: Treat these macros like an ```assert``` -  expression have to be evaluated to true and no action is taken in that case, otherwise error is returned.
 
-      Do not put complex conditions into these macros it may reduce readability, if you need such conditions use the following approach:
+      Do not put complex conditions into these macros - it may reduce readability, if you need such conditions use the following approach:
       ```
       bool mem_pattern_valid = (par->IOPattern & MFX_IOPATTERN_OUT_VIDEO_MEMORY) && (par->IOPattern & MFX_IOPATTERN_OUT_SYSTEM_MEMORY));
       MFX_CHECK(mem_pattern_valid, MFX_ERR_INVALID_VIDEO_PARAM);
       ```
-      Do not put function calls inside these macro, it may lead to double call.
+      Do not put function calls inside these macros, it may lead to double call.
 
       Example:
       ```
@@ -134,13 +157,13 @@ Feel free to improve this document. Bring more examples and rules. But please tr
       ```
     - Include guards must be used for every header.
 
-    - Include guards are preferable to ```#pragma once```, since the last one is not standardized. But all popular compilers supports it. Don't mix these two approaches, choose one.
+    - Include guards are preferable to ```#pragma once```, since the latter is not standardized. But all popular compilers support it. Don't mix these two approaches, choose one.
 
     - Stop (!!) inventing/using maximum/minimum macro. We already have ```IPP_MAX```, ```MFX_MAX```, ```UMC_MAX```, ```Max```. Use ```std::max```/```min``` instead.
 
 7.  Do not overuse conditional compilation.
 
-    - Do not leave dead code under ```#if 0```. Use comments to hide it from compiler (do not forget to verbose your intention in related comment). See [section](#code-comments) about code comments.
+    - Do not leave dead code under ```#if 0```. Use comments to hide it from compiler (do not forget to describe your intention in related comment). See [section](#code-comments) about code comments.
 
 8.  Use macro when extend public API / functionality.
 
@@ -168,9 +191,11 @@ Feel free to improve this document. Bring more examples and rules. But please tr
 
 10. Use unsigned types whenever it possible. Unsigned overflow is well defined behavior while signed is not.
 
+11. Avoid usage of local ```static``` variables because it might bring unexpectable overhead. Since C++11 initialization of local ```static``` variables must be thread safe, so compiler generates additional code to provide it.
+
 # Memory management
 
-11. Avoid manual memory management
+12. Avoid manual memory management
 
     - Functions ```memcpy```, ```memset```, ```sizeof``` are dangerous, use them only if you really need them.
 
@@ -207,9 +232,9 @@ Feel free to improve this document. Bring more examples and rules. But please tr
 
     - Use operator new instead of ```malloc```. In pair with modern concepts of allocators / placement new it could lead to much more flexible and efficient memory management.
 
-    - Do not check pointer after operator new. If it fail, it will throw ```std::bad_alloc```, and won't return ```nullptr```.
+    - Do not check pointer after operator new. If it fails, it will throw ```std::bad_alloc```, and won't return ```nullptr```.
 
-    - If you want receive ```nullptr``` in case of allocation failure from operator new. Use ```std::nothrow``` specificator.
+    - If you want to receive ```nullptr``` in case of allocation failure from operator new, use ```std::nothrow``` specificator.
 
       Example:
     
@@ -218,7 +243,7 @@ Feel free to improve this document. Bring more examples and rules. But please tr
       ```
     - Do not check pointer before ```delete```. Deleting ```nullptr``` is defined behavior and does nothing.
 
-    - Avoid macro or functions that check pointers before ```delete```. This considered bad practice and indicator of bad application logic design.
+    - Avoid macro or functions that check pointers before ```delete```. This is considered bad practice and indicator of bad application logic design.
 
       Example:
     
@@ -233,7 +258,7 @@ Feel free to improve this document. Bring more examples and rules. But please tr
 
 # Smart pointers
 
-12. Smart pointers is a correct way to handle memory management. They implements RAII paradigm.
+13. Smart pointers is a correct way to handle memory management. They implement RAII paradigm.
 
     - ```std::unique_ptr``` is a tiny layer over pointer which brings no real usage overhead, but brings major resistance over memory leaks.
 
@@ -270,11 +295,11 @@ Feel free to improve this document. Bring more examples and rules. But please tr
       ```
     - ```std::shared_ptr``` is a correct way to handle shared object.
 
-    - ```std::shared_ptr``` is a thread safe!
+    - ```std::shared_ptr``` is thread safe!
 
-    - Copying of ```std::shared_ptr``` involve atomic operations, which has some cost. So don't overuse it.
+    - Copying of ```std::shared_ptr``` involves atomic operations, which has some cost. So don't overuse it.
 
-    - Smart pointers supports custom deleters.
+    - Smart pointers support custom deleters.
 
       Example:
 
@@ -282,7 +307,7 @@ Feel free to improve this document. Bring more examples and rules. But please tr
 
     - Use ```std::make_shared``` to create ```shared_pointer```. This function will place ref counter and object in one chunk of memory with only one alloc call, also it could bring some performance benefits. (```std::make_unique``` available since C++14).
 
-    - Use smart pointer as if it was an ordinary pointer, don't call ```.get()``` every time you need to operate with pointer. Smart pointers have ```bool operator ()```, ```operator *``` and ```operator ->```.
+    - Use smart pointer as if it were an ordinary pointer, don't call ```.get()``` every time you need to operate with pointer. Smart pointers have ```bool operator ()```, ```operator *``` and ```operator ->```.
 
       Example:
     
@@ -307,7 +332,7 @@ Feel free to improve this document. Bring more examples and rules. But please tr
 
 # Exceptions
 
-13. Exceptions exists! Your code most probably throws them even if you don't do it explicitly.
+14. Exceptions exist! Your code most probably throws them even if you don't do it explicitly.
 
     - Operator new throws ```std::bad_alloc```.
 
@@ -321,7 +346,7 @@ Feel free to improve this document. Bring more examples and rules. But please tr
 
     - Use ```const``` references in catch expression to avoid excessive copies.
 
-    - Exceptions are cheap on a happy (good) path having almost no overhead. In comparison ```if``` operators for return statuses slow down every call even successful ones (+ return status occupy additional register).
+    - Exceptions are cheap on a happy (good) path having almost no overhead. In comparison ```if``` operators for return statuses slow down every call - even successful ones (+ return status occupies an additional register).
 
     - Pushing to container may trigger allocation calls and cause ```std::bad_alloc``` exception.
 
@@ -339,19 +364,19 @@ Feel free to improve this document. Bring more examples and rules. But please tr
 
     - Do not throw exceptions by pointer, it\'s hard to manage exception object life-time and ownership.
 
-    - Prefer to use dedicated exception class instead of throwing ```int```/```char*```/```double``` etc.
+    - Prefer using dedicated exception class instead of throwing ```int```/```char*```/```double``` etc.
 
-    - Don\'t re-invent a wheel, consider to use existing exception classes from ```<exception>``` header.
+    - Don\'t re-invent a wheel, consider using existing exception classes from ```<exception>``` header.
 
     - If you decided to create your own exception class - inherit it from ```std::exception``` (or its derivatives).
 
     - Use ```std::system_error``` to convey custom error results through exceptions (see [MFX error](https://wiki.ith.intel.com/display/MediaSDK/Snippets#Snippets-MFXerrorcategory.) category snippet as an example).
 
-    - \[Windows\] Don\'t use ```catch(...)``` to catch asynchronous (SEH exceptions), use ```__set_se_translator``` or ```__try```/```__except``` instead. [Here](https://stackoverflow.com/questions/4573536/ehsc-vc-eha-synchronous-vs-asynchronous-exception-handling) is good explanation of synchronous vs asynchronous exceptions. Please note, that both ```catch(...)``` and ```__set_se_translator``` require ```/EHa``` compiler switch, which is turned off by default (MSDK explicitly turn it on).
+    - \[Windows\] Don\'t use ```catch(...)``` to catch asynchronous (SEH exceptions), use ```__set_se_translator``` or ```__try```/```__except``` instead. [Here](https://stackoverflow.com/questions/4573536/ehsc-vc-eha-synchronous-vs-asynchronous-exception-handling) is good explanation of synchronous vs asynchronous exceptions. Please note, that both ```catch(...)``` and ```__set_se_translator``` require ```/EHa``` compiler switch, which is turned off by default (MSDK explicitly turns it on).
 
 # Writing a class
 
-14. Most of the hacks, performance optimizations, advanced C++ language techniques, templates and programming patterns should be localized inside the class or special utility header. Do not use them outside the class / utility functions if that won't improve readability and reliability of code. The main idea is to leave the high level execution path as clean as possible, so developers can understand the intension by quick overview without need to dig in some complicated C++ code logic.
+15. Most of the hacks, performance optimizations, advanced C++ language techniques, templates and programming patterns should be localized inside the class or special utility header. Do not use them outside the class / utility functions if that won't improve readability and reliability of code. The main idea is to leave the high level execution path as clean as possible, so developers can understand the intension by quick overview without need to dig in some complicated C++ code logic.
 
     - Create a class only if you really need it and this class will be highly utilized in code.
 
@@ -365,11 +390,11 @@ Feel free to improve this document. Bring more examples and rules. But please tr
 
     - Classes with virtual tables are non-POD.
 
-    - If class has a virtual method it should be class but not a ```struct```.
+    - If class has a virtual method it should be a class but not a ```struct```.
 
     - Use specifiers override and final for virtual methods in child classes.
 
-    - Do not use protection ```if != this``` in assignment operator. This is optimization for very rare situation, but which will perform additional check at any assignment. There is almost no cases where this optimization brings any benefits.
+    - Do not use protection ```if != this``` in assignment operator. This is optimization for very rare situation, but which will perform additional check at any assignment. There are almost no cases where this optimization brings any benefits.
 
     - If you use some advanced technics like SFINAE/template metaprogramming, limit them to only class, class methods or utility functions.
 
@@ -393,8 +418,8 @@ Feel free to improve this document. Bring more examples and rules. But please tr
       {
           PairOfHeavyObjects (HeavyObject & ll, HeavyObject & rr)
           {
-              L = ll; // \<- at this point default constructors for r and l already been called
-              R = rr;
+              l = ll; // \<- at this point default constructors for r and l already been called
+              r = rr;
           }
       
       private:
@@ -443,7 +468,7 @@ Feel free to improve this document. Bring more examples and rules. But please tr
           ...
       }
       ```
-    - Declare ```struct```s in C++ way, not in C way. The C++ approach really defines a type with desired name, but C way declares a new pseudonym for nameless types. The last one may create painful issues during includes.
+    - Declare ```struct```s in C++ way, not in C way. The C++ approach really defines a type with desired name, but C way declares a new pseudonym for nameless types. The latter may create painful issues during includes.
 
       Example:
     
@@ -466,7 +491,7 @@ Feel free to improve this document. Bring more examples and rules. But please tr
 
       Figure 1. Table of user declared / compiler declared constructors/operators
 
-    - You can use copy-swap idiom in assignment operator to guarantee state invariance in case of exception during copy / move constructor (i.e. it guarantees that object won't be in "moved from" state or it's state would be somehow affected).
+    - You can use copy-swap idiom in assignment operator to guarantee state invariance in case of exception during copy / move constructor (i.e. it guarantees that object won't be in "moved from" state or its state would be somehow affected).
 
       Example:
     
@@ -479,7 +504,7 @@ Feel free to improve this document. Bring more examples and rules. But please tr
 
 # Functions
 
-15. Use following tips for functions.
+16. Use following tips for functions.
 
     - Declare small frequently used functions as inline.
 
@@ -514,9 +539,9 @@ Feel free to improve this document. Bring more examples and rules. But please tr
 
 # Modern syntax sugar
 
-16. Modern C++ brings a lot of powerful syntax to ease most commonly used operations. This is a limited list of most useful ones.
+17. Modern C++ brings a lot of powerful syntax to ease most commonly used operations. This is a limited list of most useful ones.
 
-    - Use auto when type deduction is trivial. This will save space in code, remove unnecessary noise in declarations.
+    - Use ```auto``` when type deduction is trivial. This will save space in code, remove unnecessary noise in declarations.
 
       Example:
 
@@ -525,13 +550,13 @@ Feel free to improve this document. Bring more examples and rules. But please tr
       
       auto it = vec.rbegin(); // auto reduces visual noise, type of variable it is easily deducible
       ```
-    - Remember that auto doesn't deduce references and ```const``` (and ```volatile```).
+    - Remember that ```auto``` doesn't deduce references and ```const``` (and ```volatile```).
 
-    - Auto is very powerful in templates.
+    - ```auto``` is very powerful in templates.
 
-    - Auto is the only way to create lambda function object.
+    - ```auto``` is the only way to create lambda function object.
 
-    - Be aware of rvalue references and move semantics - this allows to reduce copies. For template functions prefer to use forwarding references.
+    - Be aware of rvalue references and move semantics - this allows to reduce copies. For template functions prefer using forwarding references.
 
       Example:
 
@@ -543,13 +568,13 @@ Feel free to improve this document. Bring more examples and rules. But please tr
 
     - Since C++11 all containers have method ```emplace```, which creates an object of desired type right inside the container without any copies.
 
-    - In most situations is better to move smart pointers, but not to copy.
+    - In most situations it is better to move smart pointers, but not to copy.
 
     - Since C++11 RVO (Return Value Optimization) is mandatory for compilers.
 
     - Try to limit usage of lambdas to situations where you need functors.
 
-    - Remember that lambdas can't me moved, every copy of lambda is also a copy of it's closure. Possible solution in situations where you need multiple copies of lambda with heavy closure is to use ```std::function```.
+    - Remember that lambdas can't me moved, every copy of lambda is also a copy of its closure. Possible solution in situations where you need multiple copies of lambda with heavy closure is to use ```std::function```.
 
     - Using declaration is more powerful since C++11, use it instead of ```typedef```.
 
@@ -566,13 +591,13 @@ Feel free to improve this document. Bring more examples and rules. But please tr
 
 # Threading
 
-17. Use threads implementation and synchronization mechanisms from modern standards.
+18. Use threads implementation and synchronization mechanisms from modern standards.
 
     - Since C++11 ```std``` has a type for threads, use ```std::thread```.
 
     - ```std::thread``` has limited interface in comparison with native threads, so you can get POSIX interface through ```.native_handle()``` method of ```std::thread```.
 
-    - C++11 has powerful cross-platform synchronization primitives (mutexes, lockes, condition variables).
+    - C++11 has powerful cross-platform synchronization primitives (mutexes, locks, condition variables).
 
     - C++11 has built in atomic variables, which actually still could be implemented via ```mutex``` if HW doesn't support real atomics (use ```is_lock_free``` / ```is_always_lock_free``` to check).
 
@@ -588,9 +613,9 @@ Feel free to improve this document. Bring more examples and rules. But please tr
 
     - Always protect shared resource access if simultaneous read/write is possible with appropriate synchronization mechanism.
 
-    - Avoid time of check and time of usage mismatch. In multithread application value of shared variable may be changed at any moment by other thread.
+    - Avoid time of check and time of usage mismatch. In multithread application value of shared variable may be changed at any moment by other thread. For ```std::atomic``` variables this issue can be avoided by putting modifications of variable inside Compare And Swap (CAS) loop with ```std::compare_exchange_weak``` (prefer this to ```std::compare_exchange_strong```).
 
-    - Limit usage of synchronizations in multi thread applications. The more synchronization primitives application uses, the less benefits it gets from threading.
+    - Limit usage of synchronizations in multi thread applications. The more synchronization primitives application uses, the less benefit it gets from threading.
 
     - Prioritize usage of non-blocking locks, such as ```try_lock```.
 
@@ -602,7 +627,7 @@ Feel free to improve this document. Bring more examples and rules. But please tr
 
 # Standard library
 
-18. Utilize standard library types and algorithms everywhere when possible.
+19. Utilize standard library types and algorithms everywhere when possible.
 
     - STL developers spent much time to optimize types and algorithms, in most situations their implementation will be the best available.
 
@@ -612,7 +637,7 @@ Feel free to improve this document. Bring more examples and rules. But please tr
 
     - If you don't use ```std::splice```, then it's better to use ```std::dequeue``` rather than ```std::list```.
 
-    - Vector reallocates it's content at the time of growth, so pointers to elements may be invalidated after inserting new element.
+    - Vector reallocates its content at the time of growth, so pointers to elements may be invalidated after inserting new element.
 
     - To avoid reallocations ```.reserve()``` memory for ```std::vector```.
 
@@ -628,8 +653,8 @@ Feel free to improve this document. Bring more examples and rules. But please tr
 
       ```
       int array[4] = {1, 2, 3, 4};
-      std::sort(array, array + 4); // correct right bound value is begin + 4 (maybe tricky and lead to errors)
-      std::sort(std::begin(array), std::end(array)); // also works and it is impossible to make mistake in boundaries (it also unified code for any container)
+      std::sort(array, array + 4); // correct right bound value is begin + 4 (may be tricky and lead to errors)
+      std::sort(std::begin(array), std::end(array)); // also works and it is impossible to make mistake in boundaries (it is also a unified code for any container)
       ```
     - C++17 brings ```std::size()``` and ```std::data()``` functions which are unified interface to get data and size of any container.
 
@@ -655,7 +680,7 @@ Feel free to improve this document. Bring more examples and rules. But please tr
 
 # Common mistakes
 
-19. This is list of some most often mistakes seen in code.
+20. This is list of some most often mistakes seen in code.
 
     - Misusage or overusage of references. References are better to use instead of pointers, it allows to skip the pointer check. Some developers consider ```const``` reference as a way to avoid undesired copying of input parameters to functions. The common rule here is that it is very cheap (faster than to dereference a pointer) to copy anything with size less than a cache line (about 64 bytes!).
 

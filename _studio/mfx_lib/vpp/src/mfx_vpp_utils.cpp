@@ -1,4 +1,4 @@
-// Copyright (c) 2018 Intel Corporation
+// Copyright (c) 2018-2020 Intel Corporation
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -639,6 +639,13 @@ void ShowPipeline( std::vector<mfxU32> pipelineList )
                 fprintf(stderr,"MFX_EXTBUFF_VPP_SCALING\n");
                 break;
             }
+#if (MFX_VERSION >= 1025)
+            case (mfxU32)MFX_EXTBUFF_VPP_COLOR_CONVERSION:
+            {
+                fprintf(stderr,"MFX_EXTBUFF_VPP_COLOR_CONVERSION\n");
+                break;
+            }
+#endif
              case (mfxU32)MFX_EXTBUFF_VPP_VIDEO_SIGNAL_INFO:
             {
                 fprintf(stderr,"MFX_EXTBUFF_VPP_VIDEO_SIGNAL_INFO\n");
@@ -925,6 +932,7 @@ mfxStatus GetPipelineList(
     mfxU16  srcW = 0, dstW = 0;
     mfxU16  srcH = 0, dstH = 0;
     //mfxU32  lenList = 0;
+    mfxStatus sts = MFX_ERR_NONE;
 
     MFX_CHECK_NULL_PTR1( videoParam );
 
@@ -1043,9 +1051,9 @@ mfxStatus GetPipelineList(
     PicStructMode picStructMode = GetPicStructMode(par->In.PicStruct, par->Out.PicStruct);
 
     mfxI32 deinterlacingMode = 0;
-    // look for user defined deinterlacing mode
     for (mfxU32 i = 0; i < videoParam->NumExtParam; i++)
     {
+        // look for user defined deinterlacing mode
         if (videoParam->ExtParam[i] && videoParam->ExtParam[i]->BufferId == MFX_EXTBUFF_VPP_DEINTERLACING)
         {
             mfxExtVPPDeinterlacing* extDI = (mfxExtVPPDeinterlacing*) videoParam->ExtParam[i];
@@ -1068,7 +1076,15 @@ mfxStatus GetPipelineList(
             }
             break;
         }
+        // check scaling parameters
+        else if (videoParam->ExtParam[i] && videoParam->ExtParam[i]->BufferId == MFX_EXTBUFF_VPP_SCALING)
+        {
+            sts = CheckScalingParam(videoParam->ExtParam[i]);
+            break;
+        }
     }
+    MFX_CHECK_STS(sts);
+
     /* DI configuration cases:
      * Default "-spic 0 -dpic 1" (TFF to progressive ) -> MFX_EXTBUFF_VPP_DI
      * Default "-spic 0 -dpic 1 -sf 30 -df 60" -> MFX_EXTBUFF_VPP_DI_30i60p
@@ -1180,7 +1196,7 @@ mfxStatus GetPipelineList(
     /* *************************************************************************** */
     /* 4. optional filters, disabled by default, enabled by EXT_BUFFER             */
     /* *************************************************************************** */
-    mfxU32 configCount = MFX_MAX(sizeof(g_TABLE_CONFIG) / sizeof(*g_TABLE_CONFIG), videoParam->NumExtParam);
+    mfxU32 configCount = std::max<mfxU32>(sizeof(g_TABLE_CONFIG) / sizeof(*g_TABLE_CONFIG), videoParam->NumExtParam);
     std::vector<mfxU32> configList(configCount);
 
     GetConfigurableFilterList( videoParam, &configList[0], &configCount );
@@ -1318,6 +1334,7 @@ mfxStatus CheckFrameInfo(mfxFrameInfo* info, mfxU32 request, eMFXHWType platform
     switch (info->FourCC)
     {
         case MFX_FOURCC_NV12:
+        case MFX_FOURCC_YV12:
 #if defined (MFX_ENABLE_FOURCC_RGB565)
         case MFX_FOURCC_RGB565:
 #endif // MFX_ENABLE_FOURCC_RGB565
@@ -1327,10 +1344,6 @@ mfxStatus CheckFrameInfo(mfxFrameInfo* info, mfxU32 request, eMFXHWType platform
         case MFX_FOURCC_NV16:
         case MFX_FOURCC_YUY2:
         case MFX_FOURCC_AYUV:
-#if defined(MFX_VA_LINUX)
-        // UYVY is supported on Linux only
-        case MFX_FOURCC_UYVY:
-#endif
             break;
 #if (MFX_VERSION >= 1027)
         case MFX_FOURCC_Y210:
@@ -1338,13 +1351,24 @@ mfxStatus CheckFrameInfo(mfxFrameInfo* info, mfxU32 request, eMFXHWType platform
             MFX_CHECK(platform >= MFX_HW_ICL, MFX_ERR_INVALID_VIDEO_PARAM);
             break;
 #endif
+#if (MFX_VERSION >= 1031)
+        case MFX_FOURCC_P016:
+        case MFX_FOURCC_Y216:
+        case MFX_FOURCC_Y416:
+            if (platform < MFX_HW_TGL_LP)
+                return MFX_ERR_INVALID_VIDEO_PARAM;
+            break;
+#endif
         case MFX_FOURCC_IMC3:
-        case MFX_FOURCC_YV12:
         case MFX_FOURCC_YUV400:
         case MFX_FOURCC_YUV411:
         case MFX_FOURCC_YUV422H:
         case MFX_FOURCC_YUV422V:
         case MFX_FOURCC_YUV444:
+#if defined(MFX_VA_LINUX)
+        // UYVY is only supported as input on Linux
+        case MFX_FOURCC_UYVY:
+#endif
             if (VPP_OUT == request)
                 return MFX_ERR_INVALID_VIDEO_PARAM;
             break;
@@ -1941,6 +1965,37 @@ mfxU16 MapDNFactor( mfxU16 denoiseFactor )
 
 } // mfxU16 MapDNFactor( mfxU16 denoiseFactor )
 
+mfxStatus CheckScalingParam(mfxExtBuffer* pScalingExtBuffer)
+{
+    mfxStatus sts = MFX_ERR_NONE;
+
+    mfxExtVPPScaling* pScalingParams = (mfxExtVPPScaling*)pScalingExtBuffer;
+    if (pScalingParams)
+    {
+#if (MFX_VERSION >= 1033)
+        // Scaling parameter combination includes the below 2 cases
+        // (MFX_SCALING_MODE_DEFAULT / MFX_SCALING_MODE_QUALITY) + (MFX_INTERPOLATION_DEFAULT / MFX_INTERPOLATION_ADVANCED)
+        // MFX_SCALING_MODE_LOWPOWER + (MFX_INTERPOLATION_DEFAULT / MFX_INTERPOLATION_NEAREST_NEIGHBOR / MFX_INTERPOLATION_BILINEAR / MFX_INTERPOLATION_ADVANCED)
+        switch (pScalingParams->ScalingMode)
+        {
+        case MFX_SCALING_MODE_DEFAULT:
+            sts = ((pScalingParams->InterpolationMethod == MFX_INTERPOLATION_DEFAULT) || (pScalingParams->InterpolationMethod == MFX_INTERPOLATION_ADVANCED)) ? MFX_ERR_NONE : MFX_ERR_INVALID_VIDEO_PARAM;
+            break;
+        case MFX_SCALING_MODE_QUALITY:
+            sts = ((pScalingParams->InterpolationMethod == MFX_INTERPOLATION_DEFAULT) || (pScalingParams->InterpolationMethod == MFX_INTERPOLATION_ADVANCED)) ? MFX_ERR_NONE : MFX_ERR_INVALID_VIDEO_PARAM;
+            break;
+        case MFX_SCALING_MODE_LOWPOWER:
+            sts = (pScalingParams->InterpolationMethod <= MFX_INTERPOLATION_ADVANCED) ? MFX_ERR_NONE : MFX_ERR_INVALID_VIDEO_PARAM;
+            break;
+        default:
+            sts = MFX_ERR_INVALID_VIDEO_PARAM;
+            break;
+        }
+#endif
+    }
+
+    return sts;
+}
 
 mfxStatus CheckExtParam(VideoCORE * core, mfxExtBuffer** ppExtParam, mfxU16 count)
 {
@@ -2066,7 +2121,7 @@ void SignalPlatformCapabilities(
         GetDoUseFilterList( (mfxVideoParam*)&param, &pDO_USE_List, &douseCount );
         if(douseCount > 0)
         {
-            size_t fCount = MFX_MIN(supportedList.size(), douseCount);
+            size_t fCount = std::min<size_t>(supportedList.size(), douseCount);
             size_t fIdx = 0;
             for(fIdx = 0; fIdx < fCount; fIdx++)
             {

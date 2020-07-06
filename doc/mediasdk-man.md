@@ -1,7 +1,7 @@
 ![](./pic/intel_logo.png)
 <br><br><br>
 # **Media SDK Developer Reference**
-## Media SDK API Version 1.30
+## Media SDK API Version 1.33
 
 <div style="page-break-before:always" />
 
@@ -25,7 +25,7 @@ Intel and the Intel logo are trademarks or registered trademarks of Intel Corpor
 
 \*Other names and brands may be claimed as the property of others.
 
-Copyright © 2007-2019, Intel Corporation. All Rights reserved.
+Copyright © 2007-2020, Intel Corporation. All Rights reserved.
 <div style="page-break-before:always" /> 
 
 **Optimization Notice**
@@ -66,6 +66,8 @@ Notice revision #20110804
     + [Surface Pool Allocation](#Surface_Pool_Allocation)
     + [Pipeline Error Reporting](#pipeline-error-reporting)
   * [Working with hardware acceleration](#hardware_acceleration)
+    + [Working with multiple Intel media devices](#Working_with_multiple_intel_media_devices)
+    + [Working with video memory](#Working_with_video_memory)
     + [Working with Microsoft* DirectX* Applications](#Working_with_Microsoft*)
     + [Working with VA API Applications](#working-with-va-api-applications)
   * [Memory Allocation and External Allocators](#Memory_Allocation)
@@ -357,6 +359,8 @@ boldface, such as [mfxStatus](#mfxStatus).
 **HDR** | High Dynamic Range
 **BRC** | Bit Rate Control
 **MCTF** | Motion Compensated Temporal Filter. Special type of a noise reduction filter which utilizes motion to improve efficiency of video denoising
+**iGPU**/**iGfx** | Integrated Intel® HD Graphics
+**dGPU**/**dGfx** | Discrete Intel® Graphics
 
 <div style="page-break-before:always" />
 
@@ -1161,6 +1165,125 @@ Assume the pipeline is **A->B->C**. The application synchronizes on sync point *
 
 ## <a id='hardware_acceleration'>Working with hardware acceleration</a>
 
+### <a id='Working_with_multiple_intel_media_devices'>Working with multiple Intel media devices</a>
+
+If your system has multiple Intel Gen Graphics adapters you may need hints on which adapter suits better to process some particular workload. The SDK provides helper API to select best suitable adapter for your workload based on passed workload description. See Example 9 that showcases workload initialization on discrete adapter.
+
+###### Example 9: Choose discrete Intel Gen Graphics adapter
+
+```C
+mfxU32 num_adapters_available;
+
+// Query number of Intel Gen Graphics adapters available on system
+mfxStatus sts = MFXQueryAdaptersNumber(&num_adapters_available);
+MSDK_CHECK_STATUS(sts, "MFXQueryAdaptersNumber failed");
+
+// Allocate memory for response
+std::vector<mfxAdapterInfo> displays_data(num_adapters_available);
+mfxAdaptersInfo adapters = { displays_data.data(), mfxU32(displays_data.size()), 0u };
+
+// Query information about all adapters (mind that first parameter is NULL)
+sts = MFXQueryAdapters(nullptr, &adapters);
+MSDK_CHECK_STATUS(sts, "MFXQueryAdapters failed");
+
+// Find dGfx adapter in list of adapters
+auto idx_d = std::find_if(adapters.Adapters, adapters.Adapters + adapters.NumActual,
+    [](const mfxAdapterInfo info)
+{
+    return info.Platform.MediaAdapterType == mfxMediaAdapterType::MFX_MEDIA_DISCRETE;
+});
+
+// No dGfx in list
+if (idx_d == adapters.Adapters + adapters.NumActual)
+{
+    printf("Warning: No dGfx detected on machine\n");
+    return -1;
+}
+
+mfxU32 idx = static_cast<mfxU32>(std::distance(adapters.Adapters, idx));
+
+// Choose correct implementation for discrete adapter
+switch (adapters.Adapters[idx].Number)
+{
+case 0:
+    impl = MFX_IMPL_HARDWARE;
+    break;
+case 1:
+    impl = MFX_IMPL_HARDWARE2;
+    break;
+case 2:
+    impl = MFX_IMPL_HARDWARE3;
+    break;
+case 3:
+    impl = MFX_IMPL_HARDWARE4;
+    break;
+
+default:
+    // Try searching on all display adapters
+    impl = MFX_IMPL_HARDWARE_ANY;
+    break;
+}
+
+// Initialize mfxSession in regular way with obtained implementation
+```
+
+As you see in Example 9, after obtaining adapter list with [MFXQueryAdapters](#MFXQueryAdapters) further initialization of [mfxSession](#mfxSession) is performed in regular way. Particular adapter choice is performed with [MFX_IMPL_HARDWARE](#mfxIMPL)**...**[MFX_IMPL_HARDWARE4](#mfxIMPL) values of [mfxIMPL](#mfxIMPL) (see [Multiple Monitors](#Multiple_monitors) section for details).
+
+Example 10 showcases usage of [MFXQueryAdapters](#MFXQueryAdapters) for querying best suitable adapter for particular encode workload (see [MFXQueryAdapters](#MFXQueryAdapters) description for adapter priority rules).
+
+###### Example 10: Choose best suitable Intel Gen Graphics adapter for encode workload
+
+```C
+mfxU32 num_adapters_available;
+
+// Query number of Intel Gen Graphics adapters available on system
+mfxStatus sts = MFXQueryAdaptersNumber(&num_adapters_available);
+MSDK_CHECK_STATUS(sts, "MFXQueryAdaptersNumber failed");
+
+// Allocate memory for response
+std::vector<mfxAdapterInfo> displays_data(num_adapters_available);
+mfxAdaptersInfo adapters = { displays_data.data(), mfxU32(displays_data.size()), 0u };
+
+// Fill description of Encode workload
+mfxComponentInfo interface_request = { MFX_COMPONENT_ENCODE, Encode_mfxVideoParam };
+
+// Query information about suitable adapters for Encode workload described by Encode_mfxVideoParam
+sts = MFXQueryAdapters(&interface_request, &adapters);
+
+if (sts == MFX_ERR_NOT_FOUND)
+{
+    printf("Error: No adapters on machine capable to process desired workload\n");
+    return -1;
+}
+MSDK_CHECK_STATUS(sts, "MFXQueryAdapters failed");
+
+// Choose correct implementation for discrete adapter. Mind usage of index 0, this is best suitable adapter from MSDK perspective
+switch (adapters.Adapters[0].Number)
+{
+case 0:
+    impl = MFX_IMPL_HARDWARE;
+    break;
+case 1:
+    impl = MFX_IMPL_HARDWARE2;
+    break;
+case 2:
+    impl = MFX_IMPL_HARDWARE3;
+    break;
+case 3:
+    impl = MFX_IMPL_HARDWARE4;
+    break;
+
+default:
+    // Try searching on all display adapters
+    impl = MFX_IMPL_HARDWARE_ANY;
+    break;
+}
+
+// Initialize mfxSession in regular way with obtained implementation
+```
+
+### <a id='Working_with_video_memory'>Working with video memory</a>
+
 To fully utilize the SDK acceleration capability, the application should support OS specific infrastructures, Microsoft\* DirectX\* for Micorosoft\* Windows\* and VA API for Linux\*. The exception is transcoding scenario where opaque memory type may be used. See Surface Type Neutral Transcoding for more details.
 
 The hardware acceleration support in application consists of video memory support and acceleration
@@ -1183,9 +1306,9 @@ The SDK supports two different infrastructures for hardware acceleration on Micr
 
 The application must create the Direct3D9* device with the flag **D3DCREATE_MULTITHREADED**. Additionally the flag **D3DCREATE_FPU_PRESERVE** is recommended. This influences floating-point calculations, including PTS values.
 
-The application must also set multithreading mode for Direct3D11* device. Example 9 Setting multithreading mode illustrates how to do it.
+The application must also set multithreading mode for Direct3D11* device. Example 11 Setting multithreading mode illustrates how to do it.
 
-###### Example 9 Setting multithreading mode
+###### Example 11 Setting multithreading mode
 
 ```C
 ID3D11Device            *pD11Device;
@@ -1244,9 +1367,9 @@ supports RGB32 output.
 The SDK supports single infrastructure for hardware acceleration on Linux* - “VA API”. The application should use the **VADisplay** interface as the acceleration device handle for this infrastructure and share it with the SDK through the **MFXVideoCORE_SetHandle** function. Because the SDK does not create internal acceleration device on Linux, the application must always share it with the SDK. This sharing should be done before any actual usage of the SDK, including capability
 query and component initialization. If the application fails to share the device, the SDK operation will fail.
 
-Example 10 Obtaining VA display from X Window System and Example 10 Obtaining VA display from Direct Rendering Manager show how to obtain and share VA display with the SDK.
+Example 12 Obtaining VA display from X Window System and Example 13 Obtaining VA display from Direct Rendering Manager show how to obtain and share VA display with the SDK.
 
-###### Example 10 Obtaining VA display from X Window System
+###### Example 12 Obtaining VA display from X Window System
 
 ```C
 Display   *x11_display;
@@ -1260,7 +1383,7 @@ MFXVideoCORE_SetHandle(session, MFX_HANDLE_VA_DISPLAY,
 
 ```
 
-###### Example 11 Obtaining VA display from Direct Rendering Manager
+###### Example 13 Obtaining VA display from Direct Rendering Manager
 
 ```C
 int card;
@@ -1306,9 +1429,9 @@ The external frame allocator can allocate different frame types:
 - in system memory and
 - in video memory, as “decoder render targets” or “processor render targets.” See the section [Working with hardware acceleration](#hardware_acceleration) for additional details.
 
-The external frame allocator responds only to frame allocation requests for the requested memory type and returns [MFX_ERR_UNSUPPORTED](#mfxStatus) for all others. The allocation request uses flags, part of memory type field, to indicate which SDK class initiates the request, so the external frame allocator can respond accordingly. Example 12 illustrates a simple external frame allocator.
+The external frame allocator responds only to frame allocation requests for the requested memory type and returns [MFX_ERR_UNSUPPORTED](#mfxStatus) for all others. The allocation request uses flags, part of memory type field, to indicate which SDK class initiates the request, so the external frame allocator can respond accordingly. Example 14 illustrates a simple external frame allocator.
 
-###### Example 12: Example Frame Allocator
+###### Example 14: Example Frame Allocator
 
 ```C
 typedef struct {
@@ -1376,13 +1499,13 @@ The application uses the following procedure to use opaque surface, assuming a t
 - During initialization, the application communicates the allocated surface pool to both SDK components by attaching the [mfxExtOpaqueSurfaceAlloc](#mfxExtOpaqueSurfaceAlloc) structure as part of the initialization parameters. The application needs to use [MFX_IOPATTERN_IN_OPAQUE_MEMORY](#IOPattern) and/or [MFX_IOPATTERN_OUT_OPAQUE_MEMORY](#IOPattern) while specifying the I/O pattern.
 - During decoding, encoding, and video processing, the application manages the surface pool and passes individual frame surface to SDK component **A** and **B** as described in section *Decoding Procedures*, section *Encoding Procedures*, and section *Video Processing Procedures*, respectively.
 
-Example 13 shows the opaque procedure sample code.
+Example 15 shows the opaque procedure sample code.
 
 Since the SDK manages the association of opaque surface to “real” surface types internally, the application cannot read the content of opaque surfaces. Also the application does not get any opaque-type surface allocation requests if the application specifies an external frame allocator.
 
 If the application shares opaque surfaces among different SDK sessions, the application must join the sessions before SDK component initialization and ensure that all joined sessions have the same hardware acceleration device handle. Setting device handle is optional only if all components in pipeline belong to the same session. The application should not disjoin the session which share opaque memory until the SDK components are not closed.
 
-###### Example 13: Pseudo-Code of Opaque Surface Procedure
+###### Example 15: Pseudo-Code of Opaque Surface Procedure
 
 ```C
 mfxExtOpqueSurfaceAlloc osa, *posa=&osa;
@@ -1433,11 +1556,11 @@ The SDK accelerates decoding, encoding and video processing through a hardware d
 
 SDK functions **Query**, **QueryIOSurf**, and **Init** return [MFX_WRN_PARTIAL_ACCELERATION](#mfxStatus) to indicate that the encoding, decoding or video processing operation can be partially hardware accelerated or not hardware accelerated at all. The application can ignore this warning and proceed with the operation. (Note that SDK functions may return errors or other warnings overwriting [MFX_WRN_PARTIAL_ACCELERATION](#mfxStatus), as it is a lower priority warning.)
 
-SDK functions return [MFX_WRN_DEVICE_BUSY](#mfxStatus) to indicate that the hardware device is busy and unable to take commands at this time. Resume the operation by waiting for a few milliseconds and resubmitting the request. Example 14 shows the decoding pseudo-code. The same procedure applies to encoding and video processing.
+SDK functions return [MFX_WRN_DEVICE_BUSY](#mfxStatus) to indicate that the hardware device is busy and unable to take commands at this time. Resume the operation by waiting for a few milliseconds and resubmitting the request. Example 16 shows the decoding pseudo-code. The same procedure applies to encoding and video processing.
 
 SDK functions return [MFX_ERR_DEVICE_LOST](#mfxStatus) or [MFX_ERR_DEVICE_FAILED](#mfxStatus) to indicate that there is a complete failure in hardware acceleration. The application must close and reinitialize the SDK function class. If the application has provided a hardware acceleration device handle to the SDK, the application must reset the device.
 
-###### Example 14: Pseudo-Code to Handle MFX_ERR_DEVICE_BUSY
+###### Example 16: Pseudo-Code to Handle MFX_ERR_DEVICE_BUSY
 
 ```C
 mfxStatus sts=MFX_ERR_NONE;
@@ -1469,6 +1592,97 @@ Global functions initialize and de-initialize the SDK library and perform query 
 [MFXGetPriority](#MFXGetPriority_1)    | Obtain session priority
 [MFXDisjoinSession](#MFXDisjoinSession) | Remove the join state of the current session
 [MFXClose](#MFXClose)                  | De-initializes an SDK session
+[MFXQueryAdaptersNumber](#MFXQueryAdaptersNumber) | Queries number of Intel Gen Graphics adapters
+[MFXQueryAdapters](#MFXQueryAdapters)             | Queries information about suitable adapters for given workload
+[MFXQueryAdaptersDecode](#MFXQueryAdaptersDecode) | Queries information about suitable adapters for decode workload
+
+### <a id='MFXQueryAdaptersNumber'>MFXQueryAdaptersNumber</a>
+
+**Syntax**
+
+[mfxStatus](#mfxStatus) `MFXQueryAdaptersNumber(mfxU32* num_adapters);`
+
+**Parameters**
+
+| | |
+--- | ---
+`num_adapters` | Pointer for output number of detected Intel Gen Graphics adapters
+
+**Description**
+
+This function returns number of Intel Gen Graphics adapters. It can be used before [MFXQueryAdapters](#MFXQueryAdapters) call to determine size of input data which user needs to allocate.
+
+**Return Status**
+
+| | |
+--- | ---
+`MFX_ERR_NONE` | The function completed successfully.
+`MFX_ERR_NULL_PTR` | `num_adapters` pointer is NULL.
+
+**Change History**
+
+This function is available since SDK API 1.31.
+
+### <a id='MFXQueryAdapters'>MFXQueryAdapters</a>
+
+**Syntax**
+
+[mfxStatus](#mfxStatus) `MFXQueryAdapters(mfxComponentInfo* input_info, mfxAdaptersInfo* adapters);`
+
+**Parameters**
+
+| | |
+--- | ---
+`input_info` | Pointer to workload description. See [mfxComponentInfo](#mfxComponentInfo) description for details.
+`adapters` | Pointer to output description of all suitable adapters for input workload. See [mfxAdaptersInfo](#mfxAdaptersInfo) description for details.
+
+**Description**
+
+This function returns list of adapters suitable to handle workload `input_info`. The list is sorted in priority order where iGPU has advantage. This rule might be changed in future. If `input_info` pointer is NULL, list of all available Intel adapters will be returned.
+
+**Return Status**
+
+| | |
+--- | ---
+`MFX_ERR_NONE` | The function completed successfully.
+`MFX_ERR_NULL_PTR` | `input_info` or `adapters` pointer is NULL.
+`MFX_ERR_NOT_FOUND` | No suitable adapters found.
+`MFX_WRN_OUT_OF_RANGE` | Not enough memory to report back entire list of adapters. In this case as many adapters as possible will be returned.
+
+**Change History**
+
+This function is available since SDK API 1.31.
+
+### <a id='MFXQueryAdaptersDecode'>MFXQueryAdaptersDecode</a>
+
+**Syntax**
+
+[mfxStatus](#mfxStatus) `MFXQueryAdaptersDecode(mfxBitstream* bitstream, mfxU32 codec_id, mfxAdaptersInfo* adapters);`
+
+**Parameters**
+
+| | |
+--- | ---
+`bitstream` | Pointer to bitstream with input data.
+`codec_id` | Codec id to determine type of codec for input bitstream.
+`adapters` | Pointer for output list of adapters. Memory should be allocated by user. See [mfxAdaptersInfo](#mfxAdaptersInfo) description for details.
+
+**Description**
+
+This function returns list of adapters suitable to decode input `bitstream`. The list is sorted in priority order where iGPU has advantage. This rule might be changed in future. This function is actually a simplification of [MFXQueryAdapters](#MFXQueryAdapters), because `bitstream` is description of workload itself.
+
+**Return Status**
+
+| | |
+--- | ---
+`MFX_ERR_NONE` | The function completed successfully.
+`MFX_ERR_NULL_PTR` | `bitstream` or `adapters` pointer is NULL.
+`MFX_ERR_NOT_FOUND` | No suitable adapters found.
+`MFX_WRN_OUT_OF_RANGE` | Not enough memory to report back entire list of adapters. In this case as many adapters as possible will be returned.
+
+**Change History**
+
+This function is available since SDK API 1.31.
 
 ### <a id='MFXCloneSession'>MFXCloneSession</a>
 
@@ -1973,16 +2187,24 @@ This function initiates execution of an asynchronous function not already starte
 | | |
 --- | ---
 `MFX_ERR_NONE` | The function completed successfully.
+`MFX_ERR_NONE_PARTIAL_OUTPUT` | The function completed successfully, bitstream contains a portion of the encoded frame according to required granularity.
 `MFX_WRN_IN_EXECUTION` | The specified asynchronous function is in execution.
 `MFX_ERR_ABORTED` | The specified asynchronous function aborted due to data dependency on a previous asynchronous function that did not complete.
 
 **Change History**
 
 This function is available since SDK API 1.0.
+Return code MFX_ERR_NONE_PARTIAL_OUTPUT is introduced in SDK API 1.31.
 
 **Remarks**
 
 See status codes for specific asynchronous functions.
+
+In partial output mode, enabled during encoder initialization [mfxExtPartialBitstreamParam](#mfxExtPartialBitstreamParam) or reset, application is expected to call SyncOperation with the same sync point repeatedly until it receives the MFX_ERR_NONE or some error;
+when MFX_ERR_NONE_PARTIAL_OUTPUT code is returned, new portion of the encoded frame is appended to the last bitstream portion located at DataOffset and increment a DataLength size accoding to new portion size in the associated [mfxBitstream](#mfxBitstream) buffer.
+Finally, when MFX_ERR_NONE returned the bitstream buffer contains full bitstream for encoded frame with DataLengh equal to it length. 
+Any processing on app level of the partial result returned in bitstream buffer must be finished before next SyncOperation call.
+
 
 ## MFXVideoENCODE
 
@@ -3756,9 +3978,9 @@ The application can attach this extended buffer to the [mfxVideoParam](#mfxVideo
 `IntRefType` | Specifies intra refresh type. See the [IntraRefreshTypes](#IntraRefreshTypes). The major goal of intra refresh is improvement of error resilience without significant impact on encoded bitstream size caused by I frames. The SDK encoder achieves this by encoding part of each frame in refresh cycle using intra MBs. `MFX_REFRESH_NO` means no refresh. `MFX_REFRESH_VERTICAL` means vertical refresh, by column of MBs. `MFX_REFRESH_HORIZONTAL` means horizontal refresh, by rows of MBs. `MFX_REFRESH_SLICE` means horizontal refresh by slices without overlapping. In case of `MFX_REFRESH_SLICE` SDK ignores IntRefCycleSize (size of refresh cycle equals number slices).  This parameter is valid during initialization and runtime. When used with [temporal scalability](#Temporal_scalability), intra refresh applied only to base layer.
 `IntRefCycleSize` | Specifies number of pictures within refresh cycle starting from 2. 0 and 1 are invalid values. This parameter is valid only during initialization
 `IntRefQPDelta` | Specifies QP difference for inserted intra MBs. This is signed value in [-51, 51] range. This parameter is valid during initialization and runtime.
-`MaxFrameSize` | Specify maximum encoded frame size in byte. This parameter is used in VBR based bitrate control modes and ignored in others. The SDK encoder tries to keep frame size below specified limit but minor overshoots are possible to preserve visual quality. This parameter is valid during initialization and runtime. It is recommended to set MaxFrameSize to 5x-10x target frame size (`(TargetKbps*1000)/(8* FrameRateExtN/FrameRateExtD)`) for I frames and 2x-4x target frame size for P frames.
+`MaxFrameSize` | Specify maximum encoded frame size in byte. This parameter is used in VBR based bitrate control modes and ignored in others. The SDK encoder tries to keep frame size below specified limit but minor overshoots are possible to preserve visual quality. This parameter is valid during initialization and runtime. It is recommended to set MaxFrameSize to 5x-10x target frame size (`(TargetKbps*1000)/(8* FrameRateExtN/FrameRateExtD)`) for I frames and 2x-4x target frame size for P/B frames.
 `MaxSliceSize` | Specify maximum slice size in bytes. If this parameter is specified other controls over number of slices are ignored.<br><br>Not all codecs and SDK implementations support this value. Use [Query](#MFXVideoENCODE_Query) function to check if this feature is supported.
-`BitrateLimit` | Turn off this flag to remove bitrate limitations imposed by the SDK encoder. This flag is intended for special usage models and usually the application should not set it. Setting this flag may lead to violation of HRD conformance and severe visual artifacts. See the [CodingOptionValue](#CodingOptionValue) enumerator for values of this option. The default value is ON, i.e. bitrate is limited. This parameter is valid only during initialization.
+`BitrateLimit` | Modifies bitrate to be in the range imposed by the SDK encoder. Setting this flag off may lead to violation of HRD conformance. Mind that specifying bitrate below the SDK encoder range might significantly affect quality. If on this option takes effect in non CQP modes: if `TargetKbps` is not in the range imposed by the SDK encoder, it will be changed to be in the range. See the [CodingOptionValue](#CodingOptionValue) enumerator for values of this option. The default value is ON, i.e. bitrate is limited. This parameter is valid only during initialization. Flag works with `MFX_CODEC_AVC` only, it is ignored with other codecs.
 `MBBRC` | Setting this flag enables macroblock level bitrate control that generally improves subjective visual quality. Enabling this flag may have negative impact on performance and objective visual quality metric. See the [CodingOptionValue](#CodingOptionValue) enumerator for values of this option. The default value depends on target usage settings.
 `ExtBRC` | Turn ON this option to enable [external BRC](#mfxExtBRC). See the [CodingOptionValue](#CodingOptionValue) enumerator for values of this option. Use [Query](#MFXVideoENCODE_Query) function to check if this feature is supported.
 `LookAheadDepth` | Specifies the depth of look ahead rate control algorithm. It is the number of frames that SDK encoder analyzes before encoding. Valid value range is from 10 to 100 inclusive. To instruct the SDK encoder to use the default value the application should zero this field.
@@ -3917,8 +4139,8 @@ The application can attach this extended buffer to the [mfxVideoParam](#mfxVideo
 `GPB` | Turn this option OFF to make HEVC encoder use regular P-frames instead of GPB.<br><br>See the [CodingOptionValue](#CodingOptionValue) enumerator for values of this option
 `LowDelayHrd` | Corresponds to AVC syntax element low_delay_hrd_flag (VUI).<br><br>See the [CodingOptionValue](#CodingOptionValue) enumerator for values of this option.
 `MotionVectorsOverPicBoundaries` | When set to OFF, no sample outside the picture boundaries and no sample at a fractional sample position for which the sample value is derived using one or more samples outside the picture boundaries is used for inter prediction of any sample.<br><br>When set to ON, one or more samples outside picture boundaries may be used in inter prediction.<br><br>See the [CodingOptionValue](#CodingOptionValue) enumerator for values of this option.
-`MaxFrameSizeI` | Same as [mfxExtCodingOption2](#mfxExtCodingOption2)`::MaxFrameSize` but affects only I-frames.
-`MaxFrameSizeP` | Same as [mfxExtCodingOption2](#mfxExtCodingOption2)`::MaxFrameSize` but affects only P-frames.
+`MaxFrameSizeI` | Same as [mfxExtCodingOption2](#mfxExtCodingOption2)`::MaxFrameSize` but affects only I-frames. MaxFrameSizeI must be set if MaxFrameSizeP is set. If MaxFrameSizeI is not specified or greater than spec limitation, spec limitation will be applied to the sizes of I-frames.
+`MaxFrameSizeP` | Same as [mfxExtCodingOption2](#mfxExtCodingOption2)`::MaxFrameSize` but affects only P/B-frames. If MaxFrameSizeP equals 0, the SDK sets MaxFrameSizeP equal to MaxFrameSizeI. If MaxFrameSizeP is not specified or greater than spec limitation, spec limitation will be applied to the sizes of P/B-frames.
 `EnableQPOffset` | Enables `QPOffset` control.<br><br>See the [CodingOptionValue](#CodingOptionValue) enumerator for values of this option.
 `QPOffset` | When `EnableQPOffset` set to ON and RateControlMethod is CQP specifies QP offset per pyramid layer.<br>For B-pyramid, B-frame QP = QPB + QPOffset[layer].<br>For P-pyramid, P-frame QP = QPP + QPOffset[layer].
 `NumRefActiveP`, `NumRefActiveBL0`, `NumRefActiveBL1` | Max number of active references for P and B frames in reference picture lists 0 and 1 correspondingly. Array index is pyramid layer.
@@ -3926,7 +4148,7 @@ The application can attach this extended buffer to the [mfxVideoParam](#mfxVideo
 `BRCPanicMode` | Controls panic mode in AVC and MPEG2 encoders.
 `LowDelayBRC`  | When rate control method is `MFX_RATECONTROL_VBR`, `MFX_RATECONTROL_QVBR` or `MFX_RATECONTROL_VCM` this parameter specifies frame size tolerance. Set this parameter to `MFX_CODINGOPTION_ON` to allow strictly obey average frame size set by `MaxKbps`, e.g. cases when `MaxFrameSize == (MaxKbps*1000)/(8* FrameRateExtN/FrameRateExtD)`.<br>Also `MaxFrameSizeI` and `MaxFrameSizeP` can be set separately.
 `EnableMBForceIntra` | Turn ON this option to enable usage of [mfxExtMBForceIntra](#mfxExtMBForceIntra) for AVC encoder. See the [CodingOptionValue](#CodingOptionValue) enumerator for values of this option. This parameter is valid only during initialization.
-`AdaptiveMaxFrameSize` | If this option is ON, BRC may decide a larger P or B frame size than what [MaxFrameSizeP](#MaxFrameSizeP) dictates when the scene change is detected. It may benefit the video quality.
+`AdaptiveMaxFrameSize` | If this option is ON, BRC may decide a larger P or B frame size than what [MaxFrameSizeP](#MaxFrameSizeP) dictates when the scene change is detected. It may benefit the video quality. AdaptiveMaxFrameSize feature is not supported with LowPower ON or if the value of MaxFrameSizeP = 0.
 `RepartitionCheckEnable` | Controls AVC encoder attempts to predict from small partitions. Default value allows encoder to choose preferred mode, `MFX_CODINGOPTION_ON` forces encoder to favor quality, `MFX_CODINGOPTION_OFF` forces encoder to favor performance.
 `QuantScaleType` | For MPEG2 specifies mapping between quantiser_scale_code and quantiser_scale (see [QuantScaleType](#QuantScaleType) enum).
 `IntraVLCFormat` | For MPEG2 specifies which table shall be used for coding of DCT coefficients of intra macroblocks (see [IntraVLCFormat](#IntraVLCFormat) enum).
@@ -5505,19 +5727,19 @@ This structure specifies configurations for decoding, encoding and transcoding p
 `CodecId`               | Specifies the codec format identifier in the FOURCC code; see the [CodecFormatFourCC](#CodecFormatFourCC) enumerator for details. This is a mandated input parameter for [QueryIOSurf](#MFXVideoENCODE_QueryIOSurf) and [Init](#MFXVideoENCODE_Init) functions.
 `CodecProfile`          | Specifies the codec profile; see the [CodecProfile](#CodecProfile) enumerator for details. Specify the codec profile explicitly or the SDK functions will determine the correct profile from other sources, such as resolution and bitrate.
 `CodecLevel`            | Codec level; see the [CodecLevel](#CodecLevel) enumerator for details. Specify the codec level explicitly or the SDK functions will determine the correct level from other sources, such as resolution and bitrate.
-`GopPicSize`            | Number of pictures within the current GOP (Group of Pictures); if `GopPicSize = 0`, then the GOP size is unspecified. If `GopPicSize = 1`, only I-frames are used. See Example 15 for pseudo-code that demonstrates how SDK uses this parameter.
-`GopRefDist`            | Distance between I- or P (or GPB) - key frames; if it is zero, the GOP structure is unspecified. Note: If `GopRefDist = 1`, there are no regular B-frames used (only P or GPB); if [mfxExtCodingOption3](#mfxExtCodingOption3)`::GPB` is ON, GPB frames (B without backward references) are used instead of P. See Example 15 for pseudo-code that demonstrates how SDK uses this parameter.
-`GopOptFlag`            | ORs of the [GopOptFlag](#GopOptFlag) enumerator indicate the additional flags for the GOP specification; see Example 15 for an example of pseudo-code that demonstrates how to use this parameter.
+`GopPicSize`            | Number of pictures within the current GOP (Group of Pictures); if `GopPicSize = 0`, then the GOP size is unspecified. If `GopPicSize = 1`, only I-frames are used. See Example 17 for pseudo-code that demonstrates how SDK uses this parameter.
+`GopRefDist`            | Distance between I- or P (or GPB) - key frames; if it is zero, the GOP structure is unspecified. Note: If `GopRefDist = 1`, there are no regular B-frames used (only P or GPB); if [mfxExtCodingOption3](#mfxExtCodingOption3)`::GPB` is ON, GPB frames (B without backward references) are used instead of P. See Example 17 for pseudo-code that demonstrates how SDK uses this parameter.
+`GopOptFlag`            | ORs of the [GopOptFlag](#GopOptFlag) enumerator indicate the additional flags for the GOP specification; see Example 17 for an example of pseudo-code that demonstrates how to use this parameter.
 `IdrInterval`           | For H.264, `IdrInterval` specifies IDR-frame interval in terms of I-frames; if `IdrInterval = 0`, then every I-frame is an IDR-frame. If `IdrInterval = 1`, then every other I-frame is an IDR-frame, etc.<br><br>For HEVC, if `IdrInterval = 0`, then only first I-frame is an IDR-frame. If `IdrInterval = 1`, then every I-frame is an IDR-frame. If `IdrInterval = 2`, then every other I-frame is an IDR-frame, etc.<br><br>For MPEG2, `IdrInterval` defines sequence header interval in terms of I-frames. If `IdrInterval = N`, SDK inserts the sequence header before every `Nth` I-frame. If `IdrInterval = 0` (default), SDK inserts the sequence header once at the beginning of the stream.<br><br>If `GopPicSize` or `GopRefDist` is zero, `IdrInterval` is undefined.
 `TargetUsage`           | Target usage model that guides the encoding process; see the [TargetUsage](#TargetUsage) enumerator for details.
 `RateControlMethod`     | Rate control method; see the [RateControlMethod](#RateControlMethod) enumerator for details.
 `InitialDelayInKB`, `TargetKbps`, `MaxKbps` | These parameters are for the constant bitrate (CBR), variable bitrate control (VBR) and [CQP HRD](#Appendix_F) algorithms.<br><br>The SDK encoders follow the Hypothetical Reference Decoding (HRD) model. The HRD model assumes that data flows into a buffer of the fixed size `BufferSizeInKB` with a constant bitrate `TargetKbps`. (Estimate the targeted frame size by dividing the framerate by the bitrate.)<br><br>The decoder starts decoding after the buffer reaches the initial size `InitialDelayInKB`, which is equivalent to reaching an initial delay of `InitialDelayInKB*8000/TargetKbps`ms. Note: In this context, KB is 1000 bytes and Kbps is 1000 bps.<br><br>If `InitialDelayInKB` or `BufferSizeInKB` is equal to zero, the value is calculated using bitrate, frame rate, profile, level, and so on.<br><br>`TargetKbps` must be specified for encoding initialization.<br><br>For variable bitrate control, the `MaxKbps` parameter specifies the maximum bitrate at which the encoded data enters the Video Buffering Verifier (VBV) buffer. If `MaxKbps` is equal to zero, the value is calculated from bitrate, frame rate, profile, level, and so on.
-`QPI, QPP, QPB`         | Quantization Parameters (`QP)  `for `I`, `P` and `B` frames, respectively, for the constant `QP` (CQP) mode.
+`QPI, QPP, QPB`         | Quantization Parameters (`QP`) for `I`, `P` and `B` frames for constant `QP` mode (CQP). Zero QP is not valid and means that default value is assigned by MediaSDK. Non-zero QPs might be clipped to supported QP range.<br>Note: Default QPI/QPP/QPB values are implementation dependent and subject to change without additional notice in this document.
 `TargetKbps`, `Accuracy`, `Convergence` | These parameters are for the average variable bitrate control (AVBR) algorithm. The algorithm focuses on overall encoding quality while meeting the specified bitrate, `TargetKbps`, within the accuracy range `Accuracy`, after a `Convergence` period. This method does not follow HRD and the instant bitrate is not capped or padded.<br><br>The `Accuracy` value is specified in the unit of tenth of percent.<br><br>The `Convergence` value is specified in the unit of 100 frames.<br><br>The `TargetKbps` value is specified in the unit of 1000 bits per second.
 `ICQQuality`            | This parameter is for Intelligent Constant Quality (ICQ) bitrate control algorithm. It is value in the 1…51 range, where 1 corresponds the best quality.
 `BufferSizeInKB`        | `BufferSizeInKB` represents the maximum possible size of any compressed frames.
 `NumSlice`              | Number of slices in each video frame; each slice contains one or more macro-block rows. If `NumSlice` equals zero, the encoder may choose any slice partitioning allowed by the codec standard. See also [mfxExtCodingOption2](#mfxExtCodingOption2)`::NumMbPerSlice`.
-`NumRefFrame`           | Number of reference frames; if `NumRefFrame = 0`, this parameter is not specified.
+`NumRefFrame`           | Max number of **all** available reference frames (for AVC/HEVC `NumRefFrame` defines DPB size); if `NumRefFrame = 0`, this parameter is not specified.<br><br>See also [mfxExtCodingOption3](#mfxExtCodingOption3)`::NumRefActiveP`, `NumRefActiveBL0` and `NumRefActiveBL1` which set a number of **active** references.
 `EncodedOrder`          | If not zero, `EncodedOrder` specifies that **ENCODE** takes the input surfaces in the encoded order and uses explicit frame type control. Application still must provide `GopRefDist` and [mfxExtCodingOption2](#mfxExtCodingOption2)`::BRefType` so SDK can pack headers and build reference lists correctly.
 `NumThread`             | Deprecated; Used to represent the number of threads the underlying implementation can use on the host processor. Always set this parameter to zero.
 `DecodedOrder`          | For AVC and HEVC, used to instruct the decoder to return output frames in the decoded order. Deprecated and must be zero for all other decoders.<br><br>When enabled, correctness of [mfxFrameData](#mfxFrameData)`::TimeStamp` and `FrameOrder` for output surface is not guaranteed, the application should ignore them.
@@ -5546,7 +5768,7 @@ SDK API 1.16 adds `MaxDecFrameBuffering` field.
 
 SDK API 1.19 adds `EnableReallocRequest` field.
 
-###### Example 15: Pseudo-Code for GOP Structure Parameters
+###### Example 17: Pseudo-Code for GOP Structure Parameters
 
 ```C
 mfxU16 get_gop_sequence (…) {
@@ -5657,7 +5879,8 @@ The SDK API 1.16 adds `GPUCopy` field.
 typedef struct {
     mfxU16 CodeName;
     mfxU16 DeviceId;
-    mfxU16 reserved[14];
+    mfxU16 MediaAdapterType;
+    mfxU16 reserved[13];
 } mfxPlatform;
 ```
 
@@ -5670,11 +5893,15 @@ The `mfxPlatform` structure contains information about hardware platform.
 | | |
 --- | ---
 `CodeName` | Intel® microarchitecture code name. See the [PlatformCodeName](#PlatformCodeName) enumerator for a list of possible values.
-`DeviceId` | Reserved.
+`DeviceId` | Unique identifier of graphics device.
+`MediaAdapterType` | Description of Intel Gen Graphics adapter type. See the [mfxMediaAdapterType](#mfxMediaAdapterType) enumerator for a list of possible values.
 
 **Change History**
 
 This structure is available since SDK API 1.19.
+Starting with SDK API 1.31 `DeviceId` field is properly filled.
+
+The SDK API 1.31 adds `MediaAdapterType` field.
 
 ## <a id='mfxPayload'>mfxPayload</a>
 
@@ -5794,6 +6021,95 @@ The `mfxVideoParam` structure contains configuration parameters for encoding, de
 This structure is available since SDK API 1.0. SDK API 1.1 extended the `AsyncDepth` field.
 
 SDK API 1.17 adds `AllocId` field.
+
+## <a id='mfxComponentInfo'>mfxComponentInfo</a>
+
+**Definition**
+
+```C
+typedef struct
+{
+    mfxComponentType Type;
+    mfxVideoParam    Requirements;
+
+    mfxU16           reserved[4];
+} mfxComponentInfo;
+```
+
+**Description**
+
+The `mfxComponentInfo` structure contains wokload description, which is accepted by [MFXQueryAdapters](#MFXQueryAdapters) function.
+
+**Members**
+
+| | |
+--- | ---
+`Type` | Type of workload: Encode, Decode, VPP.
+`Requirements` | Detailed description of workload, see [mfxVideoParam](#mfxVideoParam) for details.
+
+**Change History**
+
+This structure is available since SDK API 1.31.
+
+## <a id='mfxAdapterInfo'>mfxAdapterInfo</a>
+
+**Definition**
+
+```C
+typedef struct
+{
+    mfxPlatform Platform;
+    mfxU32      Number;
+
+    mfxU16      reserved[14];
+} mfxAdapterInfo;
+```
+
+**Description**
+
+The `mfxAdapterInfo` structure contains description of Intel Gen Graphics adapter.
+
+**Members**
+
+| | |
+--- | ---
+`Platform` | Platform type description, see [mfxPlatform](#mfxPlatform) for details.
+`Number` | Value which uniquely characterizes media adapter. On windows this number can be used for initialization through DXVA interface (see [example](https://docs.microsoft.com/en-us/windows/win32/api/dxgi/nf-dxgi-idxgifactory1-enumadapters1)).
+
+**Change History**
+
+This structure is available since SDK API 1.31.
+
+## <a id='mfxAdaptersInfo'>mfxAdaptersInfo</a>
+
+**Definition**
+
+```C
+typedef struct
+{
+    mfxAdapterInfo * Adapters;
+    mfxU32           NumAlloc;
+    mfxU32           NumActual;
+
+    mfxU16           reserved[4];
+} mfxAdaptersInfo;
+```
+
+**Description**
+
+The `mfxAdaptersInfo` structure contains description of all Intel Gen Graphics adapters available on current system.
+
+**Members**
+
+| | |
+--- | ---
+`Adapters` | Pointer to array of [mfxAdapterInfo](#mfxAdapterInfo) structs allocated by user.
+`NumAlloc` | Length of `Adapters` array.
+`NumActual` | Number of `Adapters` entries filled by [MFXQueryAdapters](#MFXQueryAdapters).
+
+**Change History**
+
+This structure is available since SDK API 1.31.
 
 ## <a id='mfxVPPStat'>mfxVPPStat</a>
 
@@ -6618,11 +6934,20 @@ enum {
     MFX_SCALING_MODE_QUALITY    = 2
 };
 
+/* Interpolation Method */
+enum {
+    MFX_INTERPOLATION_DEFAULT                = 0,
+    MFX_INTERPOLATION_NEAREST_NEIGHBOR       = 1,
+    MFX_INTERPOLATION_BILINEAR               = 2,
+    MFX_INTERPOLATION_ADVANCED               = 3
+};
+
 typedef struct {
     mfxExtBuffer Header;
 
     mfxU16 ScalingMode;
-    mfxU16 reserved[11];
+    mfxU16 InterpolationMethod;
+    mfxU16 reserved[10];
 } mfxExtVPPScaling;
 ```
 
@@ -6630,14 +6955,23 @@ typedef struct {
 
 The `mfxExtVPPScaling` structure configures the **VPP** Scaling filter algorithm.
 
+The interpolation method supports `MFX_INTERPOLATION_NEAREST_NEIGHBOR`, `MFX_INTERPOLATION_BILINEAR`,  `MFX_INTERPOLATION_DEFAULT` and `MFX_INTERPOLATION_ADVANCED`.
+`MFX_INTERPOLATION_NEAREST_NEIGHBOR` and `MFX_INTERPOLATION_BILINEAR` are well known algorithm, `MFX_INTERPOLATION_ADVANCED` is a proprietary implementation.
+
+Not all combinations of `ScalingMode` and `InterpolationMethod` are supported in the SDK. The application has to use query function to determine if a combination is supported.
+
 **Members**
 
 | | |
 --- | ---
 `Header.BufferId` | Must be [MFX_EXTBUFF_VPP_SCALING](#ExtendedBufferID)
 `ScalingMode` | Scaling mode
+`InterpolationMethod` | Interpolation Method
+
 
 **Change History**
+
+The SDK API 1.33 adds InterpolationMethod fields.
 
 This structure is available since SDK API 1.19.
 
@@ -7564,6 +7898,37 @@ This structure is used to pass decryption status report index for Common Encrypt
 
 This structure is available since SDK API 1.30.
 
+## <a id='mfxExtPartialBitstreamParam'>mfxExtPartialBitstreamParam</a>
+
+**Definition**
+
+```C
+typedef struct {
+    mfxExtBuffer    Header;
+    mfxU32          BlockSize;        /* output block granulatiry for Granularity = MFX_PARTIAL_BITSTREAM_BLOCK */
+    mfxU16          Granularity;      /* granulatiry of the partial bitstream: slice/block/any */
+    mfxU16          reserved[8];
+} mfxExtPartialBitstreamParam;
+```
+
+**Description**
+
+This structure is used by an encoder to output parts of bitstream as soon as they ready. The application can attach this extended buffer to the [mfxVideoParam](#mfxVideoParam) structure at init time.
+If this option is turned ON (Granularity != MFX_PARTIAL_BITSTREAM_NONE), then encoder can output bitstream by part based with required granularity. <br>
+<br>This parameter is valid only during initialization and reset. Absence of this buffer means default or previously configured bitstream output behavior.<br>
+<br>Not all codecs and SDK implementations support this feature. Use [Query](#MFXVideoENCODE_Query) function to check if this feature is supported.
+
+**Members**
+
+| | |
+--- | ---
+`Granularity` | Granulatiry of the partial bitstream: slice/block/any, all types of granularity state in [PartialBitstreamOutput](#PartialBitstreamOutput) enum
+`BlockSize`   | Output block granulatiry for PartialBitstreamGranularity, valid only for [MFX_PARTIAL_BITSTREAM_BLOCK](#PartialBitstreamOutput)
+
+**Change History**
+
+This structure is available since SDK API 1.31.
+
 # Enumerator Reference
 
 ## <a id='BitstreamDataFlag'>BitstreamDataFlag</a>
@@ -7687,18 +8052,18 @@ The `CodecProfile` enumerator itemizes codec profiles for all codecs.
 
 This enumerator is available since SDK API 1.0.
 
-SDK API 1.3 adds `MFX_PROFILE_AVC_EXTENDED.`
+SDK API 1.3 adds `MFX_PROFILE_AVC_EXTENDED`.
 
 SDK API 1.4 adds `MFX_PROFILE_AVC_CONSTRAINED_BASELINE, MFX_PROFILE_AVC_CONSTRAINED_HIGH,
-MFX_PROFILE_AVC_PROGRESSIVE_HIGH` and six constrained flags `MFX_PROFILE_AVC_CONSTRAINT_SET.`
+MFX_PROFILE_AVC_PROGRESSIVE_HIGH` and six constrained flags `MFX_PROFILE_AVC_CONSTRAINT_SET`.
 
 SDK API 1.8 added HEVC profile definitions.
 
-SDK API 1.16 adds `MFX_PROFILE_HEVC_REXT.`
+SDK API 1.16 adds `MFX_PROFILE_HEVC_REXT`.
 
 SDK API 1.19 added VP9 profile definitions.
 
-SDK API **TBD** adds `MFX_PROFILE_HEVC_SCC.`
+SDK API 1.32 adds `MFX_PROFILE_HEVC_SCC`.
 
 ## <a id='CodingOptionValue'>CodingOptionValue</a>
 
@@ -7773,7 +8138,7 @@ The SDK API 1.27 adds `MFX_FOURCC_Y210` and `MFX_FOURCC_Y410`.
 
 The SDK API 1.28 adds `MFX_FOURCC_RGB565` and `MFX_FOURCC_RGBP`.
 
-The SDK API **TBD** adds `MFX_FOURCC_P016`, `MFX_FOURCC_Y216` and `MFX_FOURCC_Y416`.
+The SDK API 1.31 adds `MFX_FOURCC_P016`, `MFX_FOURCC_Y216` and `MFX_FOURCC_Y416`.
 
 ## <a id='Corruption'>Corruption</a>
 
@@ -8147,7 +8512,7 @@ Use the following decorative flags to specify the OS infrastructure that hardwar
 `MFX_IMPL_VIA_D3D9` | Hardware acceleration goes through the Microsoft* Direct3D9* infrastructure.
 `MFX_IMPL_VIA_D3D11` | Hardware acceleration goes through the Microsoft* Direct3D11* infrastructure.
 `MFX_IMPL_VIA_VAAPI` | Hardware acceleration goes through the Linux* VA API infrastructure.
-`MFX_IMPL_VIA_ANY` | Hardware acceleration can go through any supported OS infrastructure. This is default value, it is used by the SDK if none of `MFX_IMPL_VIA_xxx` flag is specified by application.
+`MFX_IMPL_VIA_ANY` | Hardware acceleration can go through any supported OS infrastructure. This is default value, it is used by the SDK if none of `MFX_IMPL_VIA_xxx` flag is specified by application. If the application is going to [work with video memory](#Working_with_video_memory), it should get the exact type of video acceleration infrastructure which SDK library was initialized with by calling [MFXQueryIMPL](#MFXQueryIMPL) and create a corresponding types of video memory allocator and device manager handle.
 
 | | |
 --- | ---
@@ -8283,6 +8648,12 @@ Hardware device related errors or warnings
 `MFX_WRN_PARTIAL_ACCELERATION` | The hardware does not support the specified configuration. Encoding, decoding, or video processing may be partially accelerated. Only SDK HW implementation may return this status code.
 `MFX_ERR_GPU_HANG` | Hardware device operation failure caused by GPU hang.
 
+Special status codes
+
+| | |
+--- | ---
+`MFX_ERR_NONE_PARTIAL_OUTPUT` | Frame encoding is not finished, but bitstream contains partial bistream block 
+
 **Change History**
 
 This enumerator is available since SDK API 1.0.
@@ -8292,6 +8663,8 @@ SDK API 1.3 added the `MFX_ERR_MORE_BITSTREAM` return status.
 SDK API 1.6 added the `MFX_WRN_FILTER_SKIPPED` return status.
 
 SDK API 1.19 added `MFX_ERR_GPU_HANG` and `MFX_ERR_REALLOC_SURFACE`.
+
+SDK API 1.31 added `MFX_ERR_NONE_PARTIAL_OUTPUT`.
 
 ## <a id='PicStruct'>PicStruct</a>
 
@@ -8750,7 +9123,8 @@ The `PlatformCodeName` enumerator itemizes Intel® microarchitecture code names.
 `MFX_PLATFORM_CANNONLAKE`   | Cannon Lake
 `MFX_PLATFORM_ICELAKE`      | Ice Lake
 `MFX_PLATFORM_LAKEFIELD`    | Lakefield
-`MFX_PLATFORM_JASPERLAKE`   | Jasper lake
+`MFX_PLATFORM_JASPERLAKE`   | Jasper Lake
+`MFX_PLATFORM_ELKHARTLAKE`  | Elkhart Lake
 `MFX_PLATFORM_TIGERLAKE`    | Tiger Lake
 
 **Change History**
@@ -8762,7 +9136,27 @@ SDK API 1.25 adds `MFX_PLATFORM_GEMINILAKE`, `MFX_PLATFORM_COFFEELAKE` and `MFX_
 
 SDK API 1.27 adds `MFX_PLATFORM_ICELAKE`.
 
-SDK API **TBD** adds `MFX_PLATFORM_LAKEFIELD`, `MFX_PLATFORM_JASPERLAKE`, `MFX_PLATFORM_TIGERLAKE`.
+SDK API 1.31 adds `MFX_PLATFORM_ELKHARTLAKE`, `MFX_PLATFORM_JASPERLAKE`, `MFX_PLATFORM_TIGERLAKE`.
+
+SDK API **TBD** adds `MFX_PLATFORM_LAKEFIELD`.
+
+## <a id='mfxMediaAdapterType'>mfxMediaAdapterType</a>
+
+**Description**
+
+The `mfxMediaAdapterType` enumerator itemizes types of Intel Gen Graphics adapters.
+
+**Name/Description**
+
+| | |
+--- | ---
+`MFX_MEDIA_UNKNOWN`     | Unknown type.
+`MFX_MEDIA_INTEGRATED`  | Integrated Intel Gen Graphics adapter.
+`MFX_MEDIA_DISCRETE`    | Discrete Intel Gen Graphics adapter.
+
+**Change History**
+
+This enumerator is available since SDK API 1.31.
 
 ## <a id='PayloadCtrlFlags'>PayloadCtrlFlags</a>
 
@@ -8994,6 +9388,44 @@ The `Protected` enumerator describes the protection schemes.
 **Change History**
 
 This enumerator is available since SDK API 1.30.
+
+## <a id='mfxComponentType'>mfxComponentType</a>
+
+**Description**
+
+The `mfxComponentType` enumerator describes type of workload passed to [MFXQueryAdapters](#MFXQueryAdapters).
+
+**Name/Description**
+
+| | |
+--- | ---
+`MFX_COMPONENT_ENCODE` | Encode workload.
+`MFX_COMPONENT_DECODE` | Decode workload.
+`MFX_COMPONENT_VPP`    | VPP workload.
+
+**Change History**
+
+This enumerator is available since SDK API 1.31.
+
+## <a id='PartialBitstreamOutput'>PartialBitstreamOutput</a>
+
+**Description**
+
+The `PartialBitstreamOutput` enumerator indicates flags of partial bitstream output type. 
+
+**Name/Description**
+
+| | |
+--- | ---
+`MFX_PARTIAL_BITSTREAM_NONE`  | Don't use partial output
+`MFX_PARTIAL_BITSTREAM_SLICE` | Partial bitstream output will be aligned to slice granularity  
+`MFX_PARTIAL_BITSTREAM_BLOCK` | Partial bitstream output will be aligned to user-defined block size granularity
+`MFX_PARTIAL_BITSTREAM_ANY` | Partial bitstream output will return any coded data available at the end of SyncOperation timeout
+
+**Change History**
+
+This enumerator is available since SDK API 1.31.
+
 # Appendices
 
 ## <a id='Appendix_A'>Appendix A: Configuration Parameter Constraints</a>
@@ -9129,9 +9561,9 @@ The encoder can use the [mfxExtCodingOptionSPSPPS](#mfxExtCodingOptionSPSPPS) st
 
 The encoder must encode frames to a GOP sequence starting with an IDR frame for H.264 (or I frame for MPEG-2) to ensure that the current segment encoding does not refer to any frames in the previous segment. This ensures that the encoded segment is self-contained, allowing the application to insert it anywhere in the final bitstream. After encoding, each encoded segment is HRD compliant. However, the concatenated segments may not be HRD compliant.
 
-Example 16 shows an example of the encoder initialization procedure that imports H.264 sequence and picture parameter sets.
+Example 18 shows an example of the encoder initialization procedure that imports H.264 sequence and picture parameter sets.
 
-###### Example 16: Pseudo-code to Import H.264 SPS/PPS Parameters
+###### Example 18: Pseudo-code to Import H.264 SPS/PPS Parameters
 
 ```C
 mfxStatus init_encoder(…) {
@@ -9262,7 +9694,7 @@ As the SDK performs hardware acceleration through Intel graphic device, it is cr
 
 2. During decoding, video processing, and encoding operations, if the application is not in the Intel graphic device affinity list, the previously accessible Intel graphic device may become inaccessible due to a switch event. The SDK functions will return [MFX_ERR_DEVICE_LOST](#mfxStatus) or [MFX_ERR_DEVICE_FAILED](#mfxStatus), depending on when the switch occurs and what stage the SDK functions operate. The application needs to handle these errors and exits gracefully.
 
-### Multiple Monitors
+### <a id='Multiple_monitors'>Multiple Monitors</a>
 
 Multiple monitors refer to the machine configuration that multiple graphic devices are available. Some of the graphic devices connect to a display, they become active and accessible under the Microsoft* DirectX* infrastructure. For those graphic devices not connected to a display, they are inactive. Specifically, under the Microsoft Direct3D9* infrastructure, those devices are not accessible.
 
@@ -9298,9 +9730,9 @@ If the interruption occurs during decoding, video processing, or encoding operat
 
 The SDK takes care of all memory and synchronization related operations in VA API. However, in some cases the application may need to extend the SDK functionality by working directly with VA API for Linux\*. For example, to implement customized external allocator or **USER** functions (also known as “plug-in”). This chapter describes some basic memory management and synchronization techniques.
 
-To create VA surface pool the application should call vaCreateSurfaces as it is shown in Example 17.
+To create VA surface pool the application should call vaCreateSurfaces as it is shown in Example 19.
 
-###### Example 17: Creation of VA surfaces
+###### Example 19: Creation of VA surfaces
 
 ```C
 VASurfaceAttrib attrib;
@@ -9318,9 +9750,9 @@ vaCreateSurfaces(va_display, VA_RT_FORMAT_YUV420,
                  &attrib, 1);
 ```
 
-To destroy surface pool the application should call vaDestroySurfaces as it is shown in Example 18.
+To destroy surface pool the application should call vaDestroySurfaces as it is shown in Example 20.
 
-###### Example 18: Destroying of VA surfaces
+###### Example 20: Destroying of VA surfaces
 
 ```C
 vaDestroySurfaces(va_display, surfaces, NUM_SURFACES);
@@ -9328,9 +9760,9 @@ vaDestroySurfaces(va_display, surfaces, NUM_SURFACES);
 
 If the application works with hardware acceleration through the SDK then it can access surface data immediately after successful completion of MFXVideoCORE_SyncOperation call. If the application works with hardware acceleration directly then it has to check surface status before accessing data in video memory. This check can be done asynchronously by calling vaQuerySurfaceStatus function or synchronously by vaSyncSurface function.
 
-After successful synchronization the application can access surface data. It is performed in two steps. At the first step VAImage is created from surface and at the second step image buffer is mapped to system memory. After mapping VAImage.offsets[3] array holds offsets to each color plain in mapped buffer and VAImage.pitches[3] array holds color plain pitches, in bytes. For packed data formats, only first entries in these arrays are valid. Example 19 shows how to access data in NV12 surface.
+After successful synchronization the application can access surface data. It is performed in two steps. At the first step VAImage is created from surface and at the second step image buffer is mapped to system memory. After mapping VAImage.offsets[3] array holds offsets to each color plain in mapped buffer and VAImage.pitches[3] array holds color plain pitches, in bytes. For packed data formats, only first entries in these arrays are valid. Example 21 shows how to access data in NV12 surface.
 
-###### Example 19: Accessing data in VA surface
+###### Example 21: Accessing data in VA surface
 
 ```C
 VAImage image;
@@ -9345,18 +9777,18 @@ U = buffer + image.offsets[1];
 V = U + 1;
 ```
 
-After processing data in VA surface the application should release resources allocated for mapped buffer and VAImage object. Example 20 shows how to do it.
+After processing data in VA surface the application should release resources allocated for mapped buffer and VAImage object. Example 22 shows how to do it.
 
-###### Example 20: unmapping buffer and destroying VAImage
+###### Example 22: unmapping buffer and destroying VAImage
 
 ```C
 vaUnmapBuffer(va_display, image.buf);
 vaDestroyImage(va_display, image.image_id);
 ```
 
-In some cases, for example, to retrieve encoded bitstream from video memory, the application has to use VABuffer to store data. Example 21 shows how to create, use and then destroy VA buffer. Note, that vaMapBuffer function returns pointers to different objects depending on mapped buffer type. It is plain data buffer for VAImage and VACodedBufferSegment structure for encoded bitstream. The application cannot use VABuffer for synchronization and in case of encoding it is recommended to synchronize by input VA surface as described above.
+In some cases, for example, to retrieve encoded bitstream from video memory, the application has to use VABuffer to store data. Example 23 shows how to create, use and then destroy VA buffer. Note, that vaMapBuffer function returns pointers to different objects depending on mapped buffer type. It is plain data buffer for VAImage and VACodedBufferSegment structure for encoded bitstream. The application cannot use VABuffer for synchronization and in case of encoding it is recommended to synchronize by input VA surface as described above.
 
-###### Example 21: Working with encoded bitstream buffer
+###### Example 23: Working with encoded bitstream buffer
 
 ```C
 /* create buffer */
@@ -9389,9 +9821,9 @@ vaDestroyBuffer(va_display, buf_id);
 
 Application can configure AVC encoder to work in CQP rate control mode with HRD model parameters. SDK will place HRD information to SPS/VUI and choose appropriate profile/level. It’s responsibility of application to provide per-frame QP, track HRD conformance and insert required SEI messages to the bitstream.
 
-Example 22 shows how to enable CQP HRD mode. Application should set `RateControlMethod` to CQP, `VuiNalHrdParameters` to ON, `NalHrdConformance` to OFF and set rate control parameters similar to CBR or VBR modes (instead of QPI, QPP and QPB). SDK will choose CBR or VBR HRD mode based on `MaxKbps` parameter. If `MaxKbps` is set to zero, SDK will use CBR HRD model (write cbr_flag = 1 to VUI), otherwise VBR model will be used (and cbr_flag = 0 is written to VUI).
+Example 24 shows how to enable CQP HRD mode. Application should set `RateControlMethod` to CQP, `VuiNalHrdParameters` to ON, `NalHrdConformance` to OFF and set rate control parameters similar to CBR or VBR modes (instead of QPI, QPP and QPB). SDK will choose CBR or VBR HRD mode based on `MaxKbps` parameter. If `MaxKbps` is set to zero, SDK will use CBR HRD model (write cbr_flag = 1 to VUI), otherwise VBR model will be used (and cbr_flag = 0 is written to VUI).
 
-###### Example 22: Pseudo-code to enable CQP HRD mode
+###### Example 24: Pseudo-code to enable CQP HRD mode
 
 ```C
     mfxExtCodingOption option, *option_array;

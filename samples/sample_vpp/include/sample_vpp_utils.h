@@ -89,7 +89,6 @@ enum
     ALLOC_IMPL_VIA_VAAPI    = 4
 };
 #ifdef ENABLE_MCTF
-const mfxU16  MAX_NUM_OF_ATTACHED_BUFFERS_FOR_IN_SUFACE = 2;
 const mfxU16  MCTF_MID_FILTER_STRENGTH = 10;
 const mfxF64  MCTF_AUTO_BPP = 0.0;
 const mfxF64  MCTF_LOSSLESS_BPP = 0.0;
@@ -176,6 +175,15 @@ struct sInputParams
     //bool   bd3dAlloc;
     mfxU16   IOPattern;
     mfxIMPL  ImpLib;
+
+#if defined(LINUX32) || defined(LINUX64)
+    std::string strDevicePath; // path to device for processing
+#endif
+#if (defined(_WIN64) || defined(_WIN32)) && (MFX_VERSION >= 1031)
+    bool bPrefferdGfx;
+    bool bPrefferiGfx;
+#endif
+
     mfxU16   asyncNum;
     mfxU32   vaType;
 
@@ -183,6 +191,7 @@ struct sInputParams
 
     bool     bScaling;
     mfxU16   scalingMode;
+    mfxU16   interpolationMethod;
 
     bool     bChromaSiting;
     mfxU16   uChromaSiting;
@@ -214,7 +223,7 @@ struct sInputParams
         bool   isEnabled;
         mfxU32 interval;
         mfxF64 value1;
-        mfxF64 value2;        
+        mfxF64 value2;
     } sRtProcAmpParam;
 
     sRtProcAmpParam rtHue;
@@ -252,6 +261,7 @@ struct sInputParams
         vaType=0;
         bScaling=false;
         scalingMode=0;
+        interpolationMethod=0;
         GPUCopyValue=0;
         bPartialAccel=0;
         numFrames=0;
@@ -289,6 +299,10 @@ struct sInputParams
         rtBrightness = {};
         rtContrast = {};
 #endif
+#if (defined(_WIN64) || defined(_WIN32)) && (MFX_VERSION >= 1031)
+        bPrefferdGfx = false;
+        bPrefferiGfx = false;
+#endif
     }
 };
 
@@ -308,14 +322,12 @@ struct sMemoryAllocator
     mfxAllocatorParams* pAllocatorParams;
     bool                bUsedAsExternalAllocator;
 
-    // storage for ext-buffers pointers assosiated with input surfaces;
-    std::vector<mfxExtBuffer*> pExtBuffersStorageSurfaceIn[MAX_INPUT_STREAMS];
-    mfxFrameSurface1*     pSurfacesIn[MAX_INPUT_STREAMS]; // SINGLE_IN/OUT/MULTIPLE_INs
-    mfxFrameSurface1*     pSurfacesOut;
+    mfxFrameSurfaceWrap*     pSurfacesIn[MAX_INPUT_STREAMS]; // SINGLE_IN/OUT/MULTIPLE_INs
+    mfxFrameSurfaceWrap*     pSurfacesOut;
     mfxFrameAllocResponse responseIn[MAX_INPUT_STREAMS];  // SINGLE_IN/OUT/MULTIPLE_INs
     mfxFrameAllocResponse responseOut;
 
-    mfxFrameSurface1*     pSvcSurfaces[8]; //output surfaces per layer
+    mfxFrameSurfaceWrap*     pSvcSurfaces[8]; //output surfaces per layer
     mfxFrameAllocResponse svcResponse[8];     //per layer
 
     CHWDevice* pDevice;
@@ -358,7 +370,7 @@ public :
     mfxStatus  GetNextInputFrame(
         sMemoryAllocator* pAllocator,
         mfxFrameInfo* pInfo,
-        mfxFrameSurface1** pSurface,
+        mfxFrameSurfaceWrap** pSurface,
         mfxU16 streamIndex);
 
     mfxStatus  LoadNextFrame(
@@ -366,11 +378,11 @@ public :
         mfxFrameInfo* pInfo);
 
 private:
-    mfxStatus  GetPreAllocFrame(mfxFrameSurface1 **pSurface);
+    mfxStatus  GetPreAllocFrame(mfxFrameSurfaceWrap **pSurface);
 
     FILE*       m_fSrc;
-    std::list<mfxFrameSurface1>::iterator m_it;
-    std::list<mfxFrameSurface1>           m_SurfacesList;
+    std::list<mfxFrameSurfaceWrap>::iterator m_it;
+    std::list<mfxFrameSurfaceWrap>        m_SurfacesList;
     bool                                  m_isPerfMode;
     mfxU16                                m_Repeat;
 
@@ -395,7 +407,7 @@ public :
     mfxStatus  PutNextFrame(
         sMemoryAllocator* pAllocator,
         mfxFrameInfo* pInfo,
-        mfxFrameSurface1* pSurface);
+        mfxFrameSurfaceWrap* pSurface);
 
 private:
     mfxStatus  WriteFrame(
@@ -426,7 +438,7 @@ public :
     mfxStatus  PutNextFrame(
         sMemoryAllocator* pAllocator,
         mfxFrameInfo* pInfo,
-        mfxFrameSurface1* pSurface);
+        mfxFrameSurfaceWrap* pSurface);
 
 private:
     std::unique_ptr<CRawVideoWriter> m_ofile[8];
@@ -440,10 +452,10 @@ class SurfaceVPPStore
 public:
     struct SurfVPPExt
     {
-        SurfVPPExt(mfxFrameSurface1* pSurf = 0, mfxExtVppAuxData* pExt = 0):pSurface(pSurf),pExtVpp(pExt)
+        SurfVPPExt(mfxFrameSurfaceWrap* pSurf = nullptr, mfxExtVppAuxData* pExt = nullptr):pSurface(pSurf),pExtVpp(pExt)
         {
         };
-        mfxFrameSurface1* pSurface;
+        mfxFrameSurfaceWrap* pSurface;
         mfxExtVppAuxData* pExtVpp;
 
     };
@@ -462,47 +474,21 @@ struct sAppResources
     GeneralWriter*      pDstFileWriters;
     mfxU32              dstFileWritersN;
 
-    sFrameProcessor*    pProcessor;
-    mfxVideoParam*      pVppParams;
-    sMemoryAllocator*   pAllocator;
-    sInputParams*       pParams;
-    SurfaceVPPStore*    pSurfStore;
+    sFrameProcessor*       pProcessor;
+    MfxVideoParamsWrapper* pVppParams;
+    sMemoryAllocator*      pAllocator;
+    sInputParams*          pParams;
+    SurfaceVPPStore*       pSurfStore;
 
-    /* VPP extension */
-    mfxExtVppAuxData*   pExtVPPAuxData;
-    mfxExtVPPDoUse      extDoUse;
-    mfxU32              tabDoUseAlg[ENH_FILTERS_COUNT];
-    mfxExtBuffer*       pExtBuf[1+ENH_FILTERS_COUNT];
-
-    /* config video enhancement algorithms */
-    mfxExtVPPProcAmp    procampConfig;
-    mfxExtVPPDetail     detailConfig;
-    mfxExtVPPDenoise    denoiseConfig;
-#ifdef ENABLE_MCTF
-    mfxExtVppMctf       mctfConfig;
-#endif
-    mfxExtVPPRotation   rotationConfig;
-    mfxExtVPPScaling    scalingConfig;
-#if MFX_VERSION >= 1025
-    mfxExtColorConversion    chromaSitingConfig;
-#endif
-    mfxExtVPPFrameRateConversion    frcConfig;
-    mfxExtVPPDeinterlacing deinterlaceConfig;
-    mfxExtVPPVideoSignalInfo  videoSignalInfoConfig;
-    mfxExtVPPMirroring  mirroringConfig;
-    mfxExtVPPComposite     compositeConfig;
-
+    // number of video enhancement filters (denoise, procamp, detail, video_analysis, multi_view, ste, istab, tcc, ace, svc)
+    constexpr static uint32_t ENH_FILTERS_COUNT = 20;
+    mfxU32                    tabDoUseAlg[ENH_FILTERS_COUNT];
     // MSDK 3.0
     //  mfxExtVPPGamutMapping gamutConfig;
-    mfxExtMVCSeqDesc      multiViewConfig;
-
 
     ////MSDK API 1.5
     //mfxExtVPPSkinTone              steConfig;
     //mfxExtVPPColorSaturationLevel  tccConfig;
-    mfxExtVPPImageStab             istabConfig;
-
-    mfxExtVPPColorFill              colorfillConfig;
 
 };
 
@@ -518,7 +504,7 @@ void PrintInfo(
 void PrintDllInfo();
 
 mfxStatus InitParamsVPP(
-    mfxVideoParam* pMFXParams,
+    MfxVideoParamsWrapper* pMFXParams,
     sInputParams* pInParams,
     mfxU32 paramID);
 
@@ -530,11 +516,11 @@ mfxStatus InitResources(
 void WipeResources(sAppResources* pResources);
 void WipeParams(sInputParams* pParams);
 
-mfxStatus UpdateSurfacePool(mfxFrameInfo SurfacesInfo, mfxU16 nPoolSize, mfxFrameSurface1* pSurface);
+mfxStatus UpdateSurfacePool(mfxFrameInfo SurfacesInfo, mfxU16 nPoolSize, mfxFrameSurfaceWrap* pSurface);
 mfxStatus GetFreeSurface(
-    mfxFrameSurface1* pSurfacesPool,
+    mfxFrameSurfaceWrap* pSurfacesPool,
     mfxU16 nPoolSize,
-    mfxFrameSurface1** ppSurface);
+    mfxFrameSurfaceWrap** ppSurface);
 
 const msdk_char* IOpattern2Str(
     mfxU32 IOpattern);

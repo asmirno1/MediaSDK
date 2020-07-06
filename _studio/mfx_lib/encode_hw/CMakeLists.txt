@@ -1,4 +1,4 @@
-# Copyright (c) 2018 Intel Corporation
+# Copyright (c) 2018-2020 Intel Corporation
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -28,6 +28,15 @@ foreach( dir ${Encoders} )
   include_directories( ${MSDK_LIB_ROOT}/encode_hw/${dir}/include )
 endforeach()
 
+include_directories( ${MSDK_LIB_ROOT}/encode_hw/shared )
+include_directories( ${MSDK_LIB_ROOT}/encode_hw/hevc )
+include_directories( ${MSDK_LIB_ROOT}/encode_hw/hevc/agnostic )
+include_directories( ${MSDK_LIB_ROOT}/encode_hw/hevc/agnostic/base )
+include_directories( ${MSDK_LIB_ROOT}/encode_hw/hevc/agnostic/g12 )
+include_directories( ${MSDK_LIB_ROOT}/encode_hw/hevc/linux )
+include_directories( ${MSDK_LIB_ROOT}/encode_hw/hevc/linux/base )
+include_directories( ${MSDK_LIB_ROOT}/encode_hw/hevc/linux/g12 )
+include_directories( ${MSDK_LIB_ROOT}/shared/include)
 include_directories( ${MSDK_LIB_ROOT}/cmrt_cross_platform/include )
 include_directories( ${MSDK_LIB_ROOT}/enc_hw/mpeg2/include )
 include_directories( ${MSDK_LIB_ROOT}/pak/mpeg2/include )
@@ -57,6 +66,47 @@ foreach( prefix ${MSDK_LIB_ROOT}/shared/src )
     ${prefix}/mfx_mpeg2_encode_vaapi.cpp
     )
 endforeach()
+
+list( APPEND sources
+    shared/ehw_resources_pool.cpp
+    shared/ehw_task_manager.cpp
+    shared/ehw_device_vaapi.cpp
+    shared/ehw_utils_vaapi.cpp
+    hevc/hevcehw_disp.cpp
+    hevc/agnostic/hevcehw_base.cpp
+    hevc/agnostic/base/hevcehw_base_impl.cpp
+    hevc/agnostic/base/hevcehw_base_alloc.cpp
+    hevc/agnostic/base/hevcehw_base_constraints.cpp
+    hevc/agnostic/base/hevcehw_base_dirty_rect.cpp
+    hevc/agnostic/base/hevcehw_base_dpb_report.cpp
+    hevc/agnostic/base/hevcehw_base_encoded_frame_info.cpp
+    hevc/agnostic/base/hevcehw_base_ext_brc.cpp
+    hevc/agnostic/base/hevcehw_base_hdr_sei.cpp
+    hevc/agnostic/base/hevcehw_base_hrd.cpp
+    hevc/agnostic/base/hevcehw_base_interlace.cpp
+    hevc/agnostic/base/hevcehw_base_legacy.cpp
+    hevc/agnostic/base/hevcehw_base_legacy_defaults.cpp
+    hevc/agnostic/base/hevcehw_base_max_frame_size.cpp
+    hevc/agnostic/base/hevcehw_base_packer.cpp
+    hevc/agnostic/base/hevcehw_base_parser.cpp
+    hevc/agnostic/base/hevcehw_base_roi.cpp
+    hevc/agnostic/base/hevcehw_base_task.cpp
+    hevc/agnostic/base/hevcehw_base_weighted_prediction.cpp
+    hevc/agnostic/g12/hevcehw_g12_caps.cpp
+    hevc/agnostic/g12/hevcehw_g12_rext.cpp
+    hevc/agnostic/g12/hevcehw_g12_scc.cpp
+    hevc/linux/base/hevcehw_base_dirty_rect_lin.cpp
+    hevc/linux/base/hevcehw_base_fei_lin.cpp
+    hevc/linux/base/hevcehw_base_interlace_lin.cpp
+    hevc/linux/base/hevcehw_base_lin.cpp
+    hevc/linux/base/hevcehw_base_roi_lin.cpp
+    hevc/linux/base/hevcehw_base_va_lin.cpp
+    hevc/linux/base/hevcehw_base_va_packer_lin.cpp
+    hevc/linux/base/hevcehw_base_weighted_prediction_lin.cpp
+    hevc/linux/base/hevcehw_base_max_frame_size_lin.cpp
+    hevc/linux/g12/hevcehw_g12_lin.cpp
+    hevc/linux/g12/hevcehw_g12_rext_lin.cpp
+)
 
 make_library( encode hw static )
 

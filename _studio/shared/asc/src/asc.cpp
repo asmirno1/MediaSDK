@@ -1,4 +1,4 @@
-// Copyright (c) 2018 Intel Corporation
+// Copyright (c) 2018-2020 Intel Corporation
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -27,9 +27,11 @@
 #include "genx_scd_gen10_isa.h"
 #include "genx_scd_gen11_isa.h"
 #include "genx_scd_gen11lp_isa.h"
-#include "../include/tree.h"
-#include "../include/iofunctions.h"
-#include "../include/motion_estimation_engine.h"
+#include "genx_scd_gen12lp_isa.h"
+
+#include "tree.h"
+#include "iofunctions.h"
+#include "motion_estimation_engine.h"
 #include <limits.h>
 #include <algorithm>
 
@@ -218,14 +220,16 @@ ASC_API ASC::ASC()
 
     m_AVX2_available = 0;
     m_SSE4_available = 0;
-    GainOffset = nullptr;
-    RsCsCalc_4x4 = nullptr;
-    RsCsCalc_bound = nullptr;
-    RsCsCalc_diff = nullptr;
-    ImageDiffHistogram = nullptr;
+    GainOffset              = nullptr;
+    RsCsCalc_4x4            = nullptr;
+    RsCsCalc_bound          = nullptr;
+    RsCsCalc_diff           = nullptr;
+    ImageDiffHistogram      = nullptr;
     ME_SAD_8x8_Block_Search = nullptr;
-    Calc_RaCa_pic = nullptr;
-    resizeFunc = nullptr;
+    Calc_RaCa_pic           = nullptr;
+    resizeFunc              = nullptr;
+    ME_SAD_8x8_Block        = nullptr;
+    ME_VAR_8x8_Block        = nullptr;
 }
 
 void ASC::Setup_Environment() {
@@ -301,6 +305,10 @@ mfxStatus ASC::InitGPUsurf(CmDevice* pCmDevice) {
         break;
     case PLATFORM_INTEL_ICLLP:
         res = m_device->LoadProgram((void *)genx_scd_gen11lp, sizeof(genx_scd_gen11lp), m_program, "nojitter");
+        break;
+    case PLATFORM_INTEL_TGLLP:
+    case PLATFORM_INTEL_DG1:
+        res = m_device->LoadProgram((void *)genx_scd_gen12lp, sizeof(genx_scd_gen12lp), m_program, "nojitter");
         break;
     default:
         res = CM_NOT_IMPLEMENTED;
@@ -658,14 +666,10 @@ mfxStatus ASC::SetDimensions(mfxI32 Width, mfxI32 Height, mfxI32 Pitch) {
 #define ASC_CPU_DISP_INIT_SSE4(func)        (func = (func ## _SSE4))
 #define ASC_CPU_DISP_INIT_SSE4_C(func)      (m_SSE4_available ? ASC_CPU_DISP_INIT_SSE4(func) : ASC_CPU_DISP_INIT_C(func))
 
-#if defined(__AVX2__)
 #define ASC_CPU_DISP_INIT_AVX2(func)        (func = (func ## _AVX2))
 #define ASC_CPU_DISP_INIT_AVX2_SSE4_C(func) (m_AVX2_available ? ASC_CPU_DISP_INIT_AVX2(func) : ASC_CPU_DISP_INIT_SSE4_C(func))
 #define ASC_CPU_DISP_INIT_AVX2_C(func)      (m_AVX2_available ? ASC_CPU_DISP_INIT_AVX2(func) : ASC_CPU_DISP_INIT_C(func))
-#else
-#define ASC_CPU_DISP_INIT_AVX2_SSE4_C       ASC_CPU_DISP_INIT_SSE4_C
-#define ASC_CPU_DISP_INIT_AVX2_C            ASC_CPU_DISP_INIT_C
-#endif
+
 ASC_API mfxStatus ASC::Init(mfxI32 Width, mfxI32 Height, mfxI32 Pitch, mfxU32 PicStruct, CmDevice* pCmDevice)
 {
     mfxStatus sts = MFX_ERR_NONE;
@@ -679,6 +683,12 @@ ASC_API mfxStatus ASC::Init(mfxI32 Width, mfxI32 Height, mfxI32 Pitch, mfxU32 Pi
 
     m_AVX2_available = CpuFeature_AVX2();
     m_SSE4_available = CpuFeature_SSE41();
+
+    if (!m_SSE4_available)
+        return MFX_ERR_UNSUPPORTED;
+
+    ME_SAD_8x8_Block    = ME_SAD_8x8_Block_SSE4;
+    ME_VAR_8x8_Block    = ME_VAR_8x8_Block_SSE4;
 
     ASC_CPU_DISP_INIT_C(GainOffset);
     ASC_CPU_DISP_INIT_SSE4_C(RsCsCalc_4x4);
@@ -929,7 +939,7 @@ mfxStatus ASC::RsCsCalc() {
 }
 
 bool Hint_LTR_op_on(mfxU32 SC, mfxU32 TSC) {
-    bool ltr = TSC *TSC < (MFX_MAX(SC, 64) / 12);
+    bool ltr = TSC *TSC < (std::max(SC, 64u) / 12);
     return ltr;
 }
 
@@ -1008,7 +1018,7 @@ void ASC::MotionAnalysis(ASCVidSample *videoIn, ASCVidSample *videoRef, mfxU32 *
         mfxU16 prevFPos = i << 4;
         for (mfxU16 j = 0; j < m_dataIn->layer[lyrIdx].Width_in_blocks; j++) {
             mfxU16 fPos = prevFPos + j;
-            acc += ME_simple(m_support, fPos, m_dataIn->layer, &videoIn->layer, referenceImageIn, true, m_dataIn, ME_SAD_8x8_Block_Search);
+            acc += ME_simple(m_support, fPos, m_dataIn->layer, &videoIn->layer, referenceImageIn, true, m_dataIn, ME_SAD_8x8_Block_Search, ME_SAD_8x8_Block, ME_VAR_8x8_Block);
             valb += videoIn->layer.SAD[fPos];
             *MVdiffVal += (videoIn->layer.pInteger[fPos].x - videoRef->layer.pInteger[fPos].x) * (videoIn->layer.pInteger[fPos].x - videoRef->layer.pInteger[fPos].x);
             *MVdiffVal += (videoIn->layer.pInteger[fPos].y - videoRef->layer.pInteger[fPos].y) * (videoIn->layer.pInteger[fPos].y - videoRef->layer.pInteger[fPos].y);
