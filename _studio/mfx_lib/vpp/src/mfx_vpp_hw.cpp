@@ -2291,9 +2291,6 @@ mfxStatus  VideoVPPHW::Init(
             case MFX_HW_CFL:
                 res = m_pCmDevice->LoadProgram((void*)genx_fcopy_gen9,sizeof(genx_fcopy_gen9),m_pCmProgram,"nojitter");
                 break;
-            case MFX_HW_CNL:
-                res = m_pCmDevice->LoadProgram((void*)genx_fcopy_gen10,sizeof(genx_fcopy_gen10),m_pCmProgram,"nojitter");
-                break;
             case MFX_HW_ICL:
                 res = m_pCmDevice->LoadProgram((void*)genx_fcopy_gen11,sizeof(genx_fcopy_gen11),m_pCmProgram,"nojitter");
                 break;
@@ -6326,6 +6323,9 @@ mfxStatus ConfigureExecuteParams(
 
     if (true == executeParams.bComposite && 0 == executeParams.dstRects.size()) // composition was enabled via DO USE
         return MFX_ERR_INVALID_VIDEO_PARAM;
+
+    // A2RGB10 input supported only to copy pass thru
+    MFX_CHECK(!(!config.m_bCopyPassThroughEnable && videoParam.vpp.In.FourCC == MFX_FOURCC_A2RGB10), MFX_ERR_INVALID_VIDEO_PARAM);
 
     return (bIsFilterSkipped) ? MFX_WRN_FILTER_SKIPPED : MFX_ERR_NONE;
 

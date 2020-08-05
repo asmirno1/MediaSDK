@@ -32,12 +32,10 @@ MFX_LOCAL_SRC_FILES_HW := \
 MFX_LOCAL_SRC_FILES_HW += $(addprefix mfx_lib/genx/h264_encode/isa/, \
     genx_simple_me_gen8_isa.cpp \
     genx_simple_me_gen9_isa.cpp \
-    genx_simple_me_gen10_isa.cpp \
     genx_simple_me_gen11_isa.cpp \
     genx_simple_me_gen11lp_isa.cpp \
     genx_simple_me_gen12lp_isa.cpp \
     genx_histogram_gen9_isa.cpp \
-    genx_histogram_gen10_isa.cpp \
     genx_histogram_gen11_isa.cpp \
     genx_histogram_gen11lp_isa.cpp \
     genx_histogram_gen12lp_isa.cpp)
@@ -65,6 +63,7 @@ MFX_LOCAL_SRC_FILES_HW += \
     mfx_lib/encode_hw/hevc/agnostic/base/hevcehw_base_weighted_prediction.cpp \
     mfx_lib/encode_hw/hevc/agnostic/g12/hevcehw_g12_caps.cpp \
     mfx_lib/encode_hw/hevc/agnostic/g12/hevcehw_g12_rext.cpp \
+    mfx_lib/encode_hw/hevc/agnostic/g12/hevcehw_g12_scc.cpp \
     mfx_lib/encode_hw/hevc/linux/base/hevcehw_base_interlace_lin.cpp \
     mfx_lib/encode_hw/hevc/linux/base/hevcehw_base_fei_lin.cpp \
     mfx_lib/encode_hw/hevc/linux/base/hevcehw_base_lin.cpp \
@@ -160,7 +159,6 @@ MFX_SHARED_FILES_HW += $(addprefix mfx_lib/shared/src/, \
 MFX_SHARED_FILES_HW += $(addprefix mfx_lib/genx/asc/isa/, \
     genx_scd_gen8_isa.cpp \
     genx_scd_gen9_isa.cpp \
-    genx_scd_gen10_isa.cpp \
     genx_scd_gen11_isa.cpp \
     genx_scd_gen11lp_isa.cpp \
     genx_scd_gen12lp_isa.cpp)
@@ -168,7 +166,6 @@ MFX_SHARED_FILES_HW += $(addprefix mfx_lib/genx/asc/isa/, \
 MFX_SHARED_FILES_HW += $(addprefix mfx_lib/genx/copy_kernels/isa/, \
     genx_copy_kernel_gen8_isa.cpp \
     genx_copy_kernel_gen9_isa.cpp \
-    genx_copy_kernel_gen10_isa.cpp \
     genx_copy_kernel_gen11_isa.cpp \
     genx_copy_kernel_gen11lp_isa.cpp \
     genx_copy_kernel_gen12lp_isa.cpp)
@@ -176,7 +173,6 @@ MFX_SHARED_FILES_HW += $(addprefix mfx_lib/genx/copy_kernels/isa/, \
 MFX_SHARED_FILES_HW += $(addprefix mfx_lib/genx/field_copy/isa/, \
     genx_fcopy_gen8_isa.cpp \
     genx_fcopy_gen9_isa.cpp \
-    genx_fcopy_gen10_isa.cpp \
     genx_fcopy_gen11_isa.cpp \
     genx_fcopy_gen11lp_isa.cpp \
     genx_fcopy_gen12lp_isa.cpp)
@@ -245,7 +241,7 @@ LOCAL_C_INCLUDES := \
 
 LOCAL_CFLAGS := \
     $(MFX_CFLAGS_INTERNAL_HW) \
-    -Wall -Werror
+    -Wall -Werror -Wno-unused-parameter
 LOCAL_CFLAGS_32 := $(MFX_CFLAGS_INTERNAL_32)
 LOCAL_CFLAGS_64 := $(MFX_CFLAGS_INTERNAL_64)
 
@@ -270,7 +266,7 @@ LOCAL_C_INCLUDES := \
 
 LOCAL_CFLAGS := \
     $(MFX_CFLAGS_INTERNAL_HW) \
-    -Wall -Werror
+    -Wall -Werror -Wno-unused-parameter
 LOCAL_CFLAGS_32 := $(MFX_CFLAGS_INTERNAL_32)
 
 LOCAL_LDFLAGS := $(MFX_LOCAL_LDFLAGS_HW)
@@ -304,7 +300,7 @@ LOCAL_C_INCLUDES := \
 
 LOCAL_CFLAGS := \
     $(MFX_CFLAGS_INTERNAL_HW) \
-    -Wall -Werror
+    -Wall -Werror -Wno-unused-parameter
 LOCAL_CFLAGS_64 := $(MFX_CFLAGS_INTERNAL_64)
 
 LOCAL_LDFLAGS := $(MFX_LOCAL_LDFLAGS_HW)

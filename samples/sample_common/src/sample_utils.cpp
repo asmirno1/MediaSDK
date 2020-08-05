@@ -928,11 +928,19 @@ mfxStatus GetChromaSize(const mfxFrameInfo & pInfo, mfxU32 & ChromaW, mfxU32 & C
         break;
     }
     case MFX_FOURCC_P010:
-    case MFX_FOURCC_P210:
     case MFX_FOURCC_P016:
     {
         ChromaW = (pInfo.CropW % 2) ? (pInfo.CropW + 1) : pInfo.CropW;
-        ChromaH = pInfo.FourCC == MFX_FOURCC_P210 ? (mfxU32)pInfo.CropH : (mfxU32)(pInfo.CropH + 1) / 2;
+        ChromaH = (mfxU32)(pInfo.CropH + 1) / 2;
+        break;
+    }
+
+    case MFX_FOURCC_P210:
+    case MFX_FOURCC_Y210:
+    case MFX_FOURCC_Y216:
+    {
+        ChromaW = (pInfo.CropW % 2) ? (pInfo.CropW + 1) : pInfo.CropW;
+        ChromaH = pInfo.CropH;
         break;
     }
 
@@ -2301,6 +2309,14 @@ mfxStatus StrFormatToCodecFormatFourCC(msdk_char* strInput, mfxU32 &codecFormat)
         else if ((0 == msdk_strcmp(strInput, MSDK_STRING("rgb4_frame"))))
         {
             codecFormat = MFX_CODEC_RGB4;
+        }
+        else if ((0 == msdk_strcmp(strInput, MSDK_STRING("nv12"))))
+        {
+            codecFormat = MFX_CODEC_NV12;
+        }
+        else if ((0 == msdk_strcmp(strInput, MSDK_STRING("i420"))))
+        {
+            codecFormat = MFX_CODEC_I420;
         }
         else
             sts = MFX_ERR_UNSUPPORTED;

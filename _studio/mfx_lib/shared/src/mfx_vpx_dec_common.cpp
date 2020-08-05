@@ -38,6 +38,10 @@ namespace MFX_VPX_Utility
             if (hwType < MFX_HW_KBL)
                 return 4096;
             return 8192;
+#if defined(MFX_ENABLE_AV1_VIDEO_DECODE)
+        case MFX_CODEC_AV1:
+            return 16384;
+#endif
         default: return 0;
         }
     }
@@ -52,6 +56,10 @@ namespace MFX_VPX_Utility
             if (hwType < MFX_HW_KBL)
                 return 4096;
             return 8192;
+#if defined(MFX_ENABLE_AV1_VIDEO_DECODE)
+        case MFX_CODEC_AV1:
+            return 16384;
+#endif
         default: return 0;
         }
     }
@@ -62,6 +70,9 @@ namespace MFX_VPX_Utility
         {
         case MFX_CODEC_VP8: return profile <= MFX_PROFILE_VP8_3;
         case MFX_CODEC_VP9: return profile <= MFX_PROFILE_VP9_3;
+#if defined(MFX_ENABLE_AV1_VIDEO_DECODE)
+        case MFX_CODEC_AV1: return profile <= MFX_PROFILE_AV1_PRO;
+#endif
         default: return false;
         }
     }
@@ -93,6 +104,11 @@ namespace MFX_VPX_Utility
                 p_out->mfx.CodecLevel = p_in->mfx.CodecLevel;
                 break;
             }
+
+#if defined(MFX_ENABLE_AV1_VIDEO_DECODE)
+            if (codecId == MFX_CODEC_AV1)
+                p_out->mfx.CodecLevel = p_in->mfx.CodecLevel;
+#endif
 
             if (p_in->mfx.NumThread < 128)
                 p_out->mfx.NumThread = p_in->mfx.NumThread;
@@ -248,6 +264,16 @@ namespace MFX_VPX_Utility
                 sts = MFX_ERR_UNSUPPORTED;
             }
 
+            switch (p_in->mfx.FrameInfo.PicStruct)
+            {
+            case MFX_PICSTRUCT_UNKNOWN:
+            case MFX_PICSTRUCT_PROGRESSIVE:
+                p_out->mfx.FrameInfo.PicStruct = p_in->mfx.FrameInfo.PicStruct;
+                break;
+            default:
+                sts = MFX_ERR_UNSUPPORTED;
+                break;
+            }
 
             if (p_in->mfx.ExtendedPicStruct)
                 sts = MFX_ERR_UNSUPPORTED;
@@ -291,6 +317,11 @@ namespace MFX_VPX_Utility
             p_out->mfx.CodecId = codecId;
             p_out->mfx.CodecProfile = 1;
             p_out->mfx.CodecLevel = 1;
+
+#if defined(MFX_ENABLE_AV1_VIDEO_DECODE)
+            if (codecId == MFX_CODEC_AV1)
+                p_out->mfx.CodecLevel = MFX_LEVEL_AV1_2;
+#endif
 
             p_out->mfx.NumThread = 1;
 
@@ -434,6 +465,10 @@ namespace MFX_VPX_Utility
 
         p_request->NumFrameMin += p_params->AsyncDepth ? p_params->AsyncDepth : MFX_AUTO_ASYNC_DEPTH_VALUE;
 
+#if (MFX_VERSION >= MFX_VERSION_NEXT)
+        if ((p_params->mfx.CodecId == MFX_CODEC_AV1) && p_params->mfx.FilmGrain)
+            p_request->NumFrameMin = 2 * p_request->NumFrameMin; // we need two output surfaces for each frame when film_grain is applied
+#endif
         // Increase minimum number by one
         // E.g., decoder unlocks references in sync part (NOT async), so in order to free some surface
         // application need an additional surface to call DecodeFrameAsync()
