@@ -146,6 +146,7 @@ CTranscodingPipeline::CTranscodingPipeline():
     m_NumFramesForReset(0),
     isHEVCSW(false),
     m_bInsertIDR(false),
+    m_rawInput(false),
     m_FrameNumberPreference(0xFFFFFFFF),
     m_MaxFramesForTranscode(0xFFFFFFFF),
     m_pBSProcessor(NULL),
@@ -2313,11 +2314,6 @@ void CTranscodingPipeline::FillFrameInfoForEncoding(mfxFrameInfo& info, sInputPa
     else if (pInParams->dVPPOutFramerate)
     {
         ConvertFrameRate(pInParams->dVPPOutFramerate, &info.FrameRateExtN, &info.FrameRateExtD);
-    }
-    else
-    {
-        info.FrameRateExtN = 30;
-        info.FrameRateExtD = 1;
     }
 }
 
