@@ -57,7 +57,7 @@ namespace UMC_AV1_DECODER
         packer.reset(Packer::CreatePacker(va));
 
         uint32_t const dpb_size =
-            params.async_depth + TOTAL_REFS;
+            params.async_depth + TOTAL_REFS + 2;
         SetDPBSize(dpb_size);
         SetRefSize(TOTAL_REFS);
         return UMC::UMC_OK;
@@ -71,7 +71,7 @@ namespace UMC_AV1_DECODER
         if (firstSubmission)
         {
             // it's first submission for current frame - need to call BeginFrame
-            sts = va->BeginFrame(frame.GetMemID()); // TODO: [Rev0.85] Clarify with Ce which surface index to send: recon of display
+            sts = va->BeginFrame(frame.GetMemID(SURFACE_RECON));
             if (sts != UMC::UMC_OK)
                 return sts;
 
@@ -89,6 +89,8 @@ namespace UMC_AV1_DECODER
             packer->EndFrame();
 
         sts = va->Execute();
+        if (sts != UMC::UMC_OK)
+            sts = UMC::UMC_ERR_DEVICE_FAILED;
 
         if (lastSubmission) // it's last submission for current frame - need to call EndFrame
             sts = va->EndFrame();

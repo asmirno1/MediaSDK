@@ -2238,7 +2238,8 @@ mfxStatus CTranscodingPipeline::InitDecMfxParams(sInputParams *pInParams)
     // set memory pattern
     if (m_bUseOpaqueMemory)
         m_mfxDecParams.IOPattern = MFX_IOPATTERN_OUT_OPAQUE_MEMORY;
-    else if (pInParams->bForceSysMem || (MFX_IMPL_SOFTWARE == pInParams->libType))
+    else if (pInParams->bForceSysMem || (MFX_IMPL_SOFTWARE == pInParams->libType)
+         || (pInParams->DecOutPattern == MFX_IOPATTERN_OUT_SYSTEM_MEMORY))
         m_mfxDecParams.IOPattern = MFX_IOPATTERN_OUT_SYSTEM_MEMORY;
     else
         m_mfxDecParams.IOPattern = MFX_IOPATTERN_OUT_VIDEO_MEMORY;
@@ -2508,7 +2509,8 @@ MFX_IOPATTERN_IN_VIDEO_MEMORY : MFX_IOPATTERN_IN_SYSTEM_MEMORY);
     if (pInParams->bLABRC || pInParams->nMaxSliceSize || pInParams->nBRefType
         || (pInParams->BitrateLimit && pInParams->EncodeId == MFX_CODEC_AVC)
         || (pInParams->nExtBRC && (pInParams->EncodeId == MFX_CODEC_HEVC || pInParams->EncodeId == MFX_CODEC_AVC)) ||
-        pInParams->IntRefType || pInParams->IntRefCycleSize || pInParams->IntRefQPDelta || pInParams->nMaxFrameSize)
+        pInParams->IntRefType || pInParams->IntRefCycleSize || pInParams->IntRefQPDelta || pInParams->nMaxFrameSize ||
+        pInParams->AdaptiveI || pInParams->AdaptiveB)
     {
         auto co2 = m_mfxEncParams.AddExtBuffer<mfxExtCodingOption2>();
         co2->LookAheadDepth = pInParams->nLADepth;
@@ -2520,6 +2522,8 @@ MFX_IOPATTERN_IN_VIDEO_MEMORY : MFX_IOPATTERN_IN_SYSTEM_MEMORY);
         co2->IntRefType = pInParams->IntRefType;
         co2->IntRefCycleSize = pInParams->IntRefCycleSize;
         co2->IntRefQPDelta = pInParams->IntRefQPDelta;
+        co2->AdaptiveI = pInParams->AdaptiveI;
+        co2->AdaptiveB = pInParams->AdaptiveB;
 
         if (pInParams->nExtBRC != EXTBRC_DEFAULT && (pInParams->EncodeId == MFX_CODEC_HEVC || pInParams->EncodeId == MFX_CODEC_AVC))
         {

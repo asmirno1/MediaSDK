@@ -74,6 +74,7 @@ enum eMFXHWType
     
     MFX_HW_TGL_LP    = 0x1600000,
     MFX_HW_RKL       = MFX_HW_TGL_LP + 2,
+    MFX_HW_ADL_S     = MFX_HW_TGL_LP + 4,
     MFX_HW_DG1       = 0x1600003,
 
 
@@ -89,11 +90,6 @@ enum eMFXGTConfig
 };
 
 // mfxU8 CodecProfile, CodecLevel
-// They are the same numbers as used in specific codec standards.
-enum {
-    // AVC Profiles & Levels
-    MFX_PROFILE_AVC_HIGH10      =110,
-};
 /*
 Some components (samples, JPEG decoder) has used MFX_FOURCC_RGBP already.
 So, for API 1.27 and below "MFX_FOURCC_RGBP" defined inside of msdk library

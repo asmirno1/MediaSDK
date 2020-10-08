@@ -2301,6 +2301,7 @@ mfxStatus  VideoVPPHW::Init(
             case MFX_HW_TGL_LP:
             case MFX_HW_DG1:
             case MFX_HW_RKL:
+            case MFX_HW_ADL_S:
                 res = m_pCmDevice->LoadProgram((void*)genx_fcopy_gen12lp,sizeof(genx_fcopy_gen12lp),m_pCmProgram,"nojitter");
                 break;
 #endif
@@ -4641,7 +4642,7 @@ mfxStatus VideoVPPHW::SubmitToMctf(void *pState, void *pParam, bool* bMctfReadyT
             // filtering itself
             MFX_SAFE_CALL(pHwVpp->m_pMCTFilter->MCTF_DO_FILTERING());
 
-            *bMctfReadyToReturn = pHwVpp->m_pMCTFilter->MCTF_ReadyToOutut();
+            *bMctfReadyToReturn = pHwVpp->m_pMCTFilter->MCTF_ReadyToOutput();
         }
     }
     else

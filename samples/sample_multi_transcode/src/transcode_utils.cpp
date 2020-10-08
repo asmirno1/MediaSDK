@@ -134,7 +134,7 @@ void TranscodingSample::PrintHelp()
     msdk_printf(MSDK_STRING("  -i::i420|nv12 <file-name>\n"));
     msdk_printf(MSDK_STRING("                 Set raw input file and color format\n"));
     msdk_printf(MSDK_STRING("  -i::rgb4_frame Set input rgb4 file for compositon. File should contain just one single frame (-vpp_comp_src_h and -vpp_comp_src_w should be specified as well).\n"));
-    msdk_printf(MSDK_STRING("  -o::h265|h264|mpeg2|mvc|jpeg|raw <file-name>\n"));
+    msdk_printf(MSDK_STRING("  -o::h265|h264|mpeg2|mvc|jpeg|vp9|raw <file-name>\n"));
     msdk_printf(MSDK_STRING("                Set output file and encoder type\n"));
     msdk_printf(MSDK_STRING("  -sw|-hw|-hw_d3d11\n"));
     msdk_printf(MSDK_STRING("                SDK implementation to use: \n"));
@@ -203,6 +203,7 @@ void TranscodingSample::PrintHelp()
 
     msdk_printf(MSDK_STRING("  -ext_allocator    Force usage of external allocators\n"));
     msdk_printf(MSDK_STRING("  -sys          Force usage of external system allocator\n"));
+    msdk_printf(MSDK_STRING("  -dec::sys     Set dec output to system memory\n"));
     msdk_printf(MSDK_STRING("  -vpp::sys     Set vpp output to system memory\n"));
     msdk_printf(MSDK_STRING("  -vpp::vid     Set vpp output to video memory\n"));
     msdk_printf(MSDK_STRING("  -fps <frames per second>\n"));
@@ -273,6 +274,8 @@ void TranscodingSample::PrintHelp()
     msdk_printf(MSDK_STRING("  -CodecLevel            - Specifies codec level\n"));
     msdk_printf(MSDK_STRING("  -GopOptFlag:closed     - Closed gop\n"));
     msdk_printf(MSDK_STRING("  -GopOptFlag:strict     - Strict gop\n"));
+    msdk_printf(MSDK_STRING("  -AdaptiveI:<on,off>    - Turn Adaptive I frames on/off\n"));
+    msdk_printf(MSDK_STRING("  -AdaptiveB:<on,off>    - Turn Adaptive B frames on/off\n"));
     msdk_printf(MSDK_STRING("  -InitialDelayInKB      - The decoder starts decoding after the buffer reaches the initial size InitialDelayInKB, \n\
                             which is equivalent to reaching an initial delay of InitialDelayInKB*8000/TargetKbps ms\n"));
     msdk_printf(MSDK_STRING("  -MaxKbps               - For variable bitrate control, specifies the maximum bitrate at which \n\
@@ -1217,6 +1220,22 @@ mfxStatus ParseAdditionalParams(msdk_char *argv[], mfxU32 argc, mfxU32& i, Trans
     {
         InputParams.BitrateLimit = MFX_CODINGOPTION_OFF;
     }
+    else if (0 == msdk_strcmp(argv[i], MSDK_STRING("-AdaptiveI:on")))
+    {
+        InputParams.AdaptiveI = MFX_CODINGOPTION_ON;
+    }
+    else if (0 == msdk_strcmp(argv[i], MSDK_STRING("-AdaptiveI:off")))
+    {
+        InputParams.AdaptiveI = MFX_CODINGOPTION_OFF;
+    }
+    else if (0 == msdk_strcmp(argv[i], MSDK_STRING("-AdaptiveB:on")))
+    {
+        InputParams.AdaptiveB = MFX_CODINGOPTION_ON;
+    }
+    else if (0 == msdk_strcmp(argv[i], MSDK_STRING("-AdaptiveB:off")))
+    {
+        InputParams.AdaptiveB = MFX_CODINGOPTION_OFF;
+    }
 #if (defined(_WIN32) || defined(_WIN64)) && (MFX_VERSION >= 1031)
     else if (0 == msdk_strcmp(argv[i], MSDK_STRING("-iGfx")))
     {
@@ -1268,6 +1287,10 @@ mfxStatus ParseAdditionalParams(msdk_char *argv[], mfxU32 argc, mfxU32& i, Trans
             PrintError(argv[0], MSDK_STRING("ICQQuality param is invalid"));
             return MFX_ERR_UNSUPPORTED;
         }
+    }
+    else if (0 == msdk_strcmp(argv[i], MSDK_STRING("-dec::sys")))
+    {
+        InputParams.DecOutPattern = MFX_IOPATTERN_OUT_SYSTEM_MEMORY;
     }
     else
     {

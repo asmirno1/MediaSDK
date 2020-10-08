@@ -2669,6 +2669,7 @@ mfxStatus CmCopyWrapper::InitializeSwapKernels(eMFXHWType hwtype)
     case MFX_HW_TGL_LP:
     case MFX_HW_DG1:
     case MFX_HW_RKL:
+    case MFX_HW_ADL_S:
         cmSts = m_pCmDevice->LoadProgram((void*)genx_copy_kernel_gen12lp,sizeof(genx_copy_kernel_gen12lp),m_pCmProgram,"nojitter");
         break;
 #endif
@@ -3164,6 +3165,8 @@ mfxStatus CmCopyWrapper::CopyMirrorVideoToVideoMemory(void *pDst, void *pSrc, mf
 
 bool CmCopyWrapper::CheckSurfaceContinuouslyAllocated(const mfxFrameSurface1 &surf)
 {
+    mfxU32 stride_in_bytes = surf.Data.PitchLow + ((mfxU32)surf.Data.PitchHigh << 16);
+
     switch (surf.Info.FourCC)
     {
     // Packed formats like YUY2, UYVY, AYUV, Y416, Y210, Y410, A2RGB10, RGB565, RGB3 
@@ -3176,8 +3179,7 @@ bool CmCopyWrapper::CheckSurfaceContinuouslyAllocated(const mfxFrameSurface1 &su
     case MFX_FOURCC_NV12:
     case MFX_FOURCC_NV16:
         {
-            mfxU32 stride_in_bytes = surf.Data.PitchLow + ((mfxU32)surf.Data.PitchHigh << 16);
-            size_t luma_size_in_bytes = stride_in_bytes * mfx::align2_value(surf.Info.Height);
+            size_t luma_size_in_bytes = stride_in_bytes * mfx::align2_value(surf.Info.Height, 32);
             return surf.Data.Y + luma_size_in_bytes == surf.Data.UV;
             break;
         }
@@ -3185,8 +3187,7 @@ bool CmCopyWrapper::CheckSurfaceContinuouslyAllocated(const mfxFrameSurface1 &su
     // Handling planar formats
     case MFX_FOURCC_YV12:
         {
-            mfxU32 stride_in_bytes = surf.Data.PitchLow + ((mfxU32)surf.Data.PitchHigh << 16);
-            size_t luma_size_in_bytes = stride_in_bytes * mfx::align2_value(surf.Info.Height);
+            size_t luma_size_in_bytes = stride_in_bytes * mfx::align2_value(surf.Info.Height, 32);
             size_t chroma_size_in_bytes = luma_size_in_bytes / 4; //stride of the V plane is half the stride of the Y plane; and the V plane contains half as many lines as the Y plane
             return surf.Data.Y + luma_size_in_bytes == surf.Data.V && surf.Data.V + chroma_size_in_bytes == surf.Data.U;
             break;
@@ -3195,8 +3196,7 @@ bool CmCopyWrapper::CheckSurfaceContinuouslyAllocated(const mfxFrameSurface1 &su
     // Handling RGB-like formats
     case MFX_FOURCC_RGBP:
         {
-            mfxU32 stride_in_bytes = surf.Data.PitchLow + ((mfxU32)surf.Data.PitchHigh << 16);
-            size_t channel_size_in_bytes = stride_in_bytes * mfx::align2_value(surf.Info.Height);
+            size_t channel_size_in_bytes = stride_in_bytes * mfx::align2_value(surf.Info.Height, 32);
             return surf.Data.B + channel_size_in_bytes == surf.Data.G && surf.Data.G + channel_size_in_bytes == surf.Data.R;
             break;
         }
