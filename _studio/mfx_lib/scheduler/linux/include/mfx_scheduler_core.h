@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019 Intel Corporation
+// Copyright (c) 2018-2020 Intel Corporation
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -31,9 +31,6 @@
 
 // synchronization stuff
 #include <vm_time.h>
-
-#include <umc_semaphore.h>
-#include <umc_event.h>
 
 #include <vector>
 
@@ -386,10 +383,9 @@ protected:
 
 
 
-    // Event to wait free task objects
-    UMC::Semaphore m_freeTasks;
-    // Some task was done in HW
-    vm_event m_hwTaskDone;
+    // Condition variable to wait free task objects
+    mfxU16 m_freeTasksCount;
+    std::condition_variable m_freeTasks;
     // Handle to the wakeup thread
     std::thread m_hwWakeUpThread;
 

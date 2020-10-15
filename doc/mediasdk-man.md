@@ -1,4 +1,4 @@
-﻿![](./pic/intel_logo.png)
+![](./pic/intel_logo.png)
 
 # **Media SDK Developer Reference**
 ## Media SDK API Version 1.34
@@ -1616,7 +1616,7 @@ Global functions initialize and de-initialize the SDK library and perform query 
 
 **Description**
 
-This function returns number of Intel Gen Graphics adapters. It can be used before [MFXQueryAdapters](#MFXQueryAdapters) call to determine size of input data which user needs to allocate.
+This function returns number of Intel Gen Graphics adapters. It can be used before [MFXQueryAdapters](#MFXQueryAdapters) call to determine size of input data which user needs to allocate. Result of this function corresponds only to DX11 adapters enumeration.
 
 **Return Status**
 
@@ -1644,7 +1644,7 @@ This function is available since SDK API 1.31.
 
 **Description**
 
-This function returns list of adapters suitable to handle workload `input_info`. The list is sorted in priority order: iGPU has advantage over dGPU with only exception when workload is HEVC encode and iGPU is less than Gen12. This rule might be changed in future. If `input_info` pointer is NULL, list of all available Intel adapters will be returned.
+This function returns list of adapters suitable to handle workload `input_info`. The list is sorted in priority order: iGPU has advantage over dGPU with only exception when workload is HEVC encode and iGPU is less than Gen12. This rule might be changed in future. If `input_info` pointer is NULL, list of all available Intel adapters will be returned. Result of this function corresponds only to DX11 adapters enumeration.
 
 **Return Status**
 
@@ -1675,7 +1675,7 @@ This function is available since SDK API 1.31.
 
 **Description**
 
-This function returns list of adapters suitable to decode input `bitstream`. The list is sorted in priority order where iGPU has advantage. This rule might be changed in future. This function is actually a simplification of [MFXQueryAdapters](#MFXQueryAdapters), because `bitstream` is description of workload itself.
+This function returns list of adapters suitable to decode input `bitstream`. The list is sorted in priority order where iGPU has advantage. This rule might be changed in future. This function is actually a simplification of [MFXQueryAdapters](#MFXQueryAdapters), because `bitstream` is description of workload itself. Result of this function corresponds only to DX11 adapters enumeration.
 
 **Return Status**
 
@@ -9424,8 +9424,6 @@ The `PlatformCodeName` enumerator itemizes Intel® microarchitecture code names.
 `MFX_PLATFORM_JASPERLAKE`   | Jasper Lake
 `MFX_PLATFORM_ELKHARTLAKE`  | Elkhart Lake
 `MFX_PLATFORM_TIGERLAKE`    | Tiger Lake
-`MFX_PLATFORM_ROCKETLAKE`   | Rocket Lake
-`MFX_PLATFORM_ALDERLAKE_S`  | Alder Lake S
 `MFX_PLATFORM_KEEMBAY`      | Keem Bay
 
 **Change History**
@@ -9441,7 +9439,7 @@ SDK API 1.31 adds `MFX_PLATFORM_ELKHARTLAKE`, `MFX_PLATFORM_JASPERLAKE`, `MFX_PL
 
 SDK API 1.34 adds `MFX_PLATFORM_KEEMBAY`.
 
-SDK API **TBD** adds `MFX_PLATFORM_ROCKETLAKE`, `MFX_PLATFORM_ALDERLAKE_S`, `MFX_PLATFORM_LAKEFIELD`.
+SDK API **TBD** adds `MFX_PLATFORM_LAKEFIELD`.
 
 ## <a id='mfxMediaAdapterType'>mfxMediaAdapterType</a>
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2018 Intel Corporation
+// Copyright (c) 2018-2020 Intel Corporation
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -123,22 +123,10 @@ void mfxSchedulerCore::WakeupThreadProc()
     // main working cycle for threads
     while (false == m_bQuitWakeUpThread)
     {
-        vm_status vmRes;
-
-        vmRes = vm_event_timed_wait(&m_hwTaskDone, m_timer_hw_event);
-
-        // HW event is signaled. Reset all HW waiting tasks.
-        if (VM_OK == vmRes||
-            VM_TIMEOUT == vmRes)
+        IncrementHWEventCounter();
         {
-            vmRes = vm_event_reset(&m_hwTaskDone);
-
-            //MFX_AUTO_LTRACE(MFX_TRACE_LEVEL_SCHED, "HW Event");
-            IncrementHWEventCounter();
-            {
-                std::lock_guard<std::mutex> guard(m_guard);
-                WakeUpThreads(1,1);
-            }
+            std::lock_guard<std::mutex> guard(m_guard);
+            WakeUpThreads(1,1);
         }
     }
 }

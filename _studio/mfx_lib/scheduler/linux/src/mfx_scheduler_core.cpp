@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019 Intel Corporation
+// Copyright (c) 2018-2020 Intel Corporation
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -48,7 +48,6 @@ mfxSchedulerCore::mfxSchedulerCore(void)
 
     m_pThreadCtx = NULL;
     m_vmtick_msec_frequency = vm_time_get_frequency()/1000;
-    vm_event_set_invalid(&m_hwTaskDone);
 
     // reset task variables
     memset(m_pTasks, 0, sizeof(m_pTasks));
